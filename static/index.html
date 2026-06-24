@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Naver DataLab Trend Forecaster</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700&family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <!-- FontAwesome for Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- ApexCharts CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Header -->
+        <header class="header-area">
+            <div class="logo">
+                <i class="fa-solid fa-chart-line"></i>
+                <span class="logo-title">TrendPulse</span>
+            </div>
+            <div class="subtitle">네이버 데이터랩 API 기반 트렌드 예측 대시보드</div>
+        </header>
+
+        <!-- Main Grid Layout -->
+        <div class="main-grid">
+            <!-- Sidebar: Controls & Filters -->
+            <aside class="clean-card sidebar">
+                <h2 class="section-title"><i class="fa-solid fa-sliders"></i> 분석 조건 설정</h2>
+                
+                <form id="forecast-form">
+                    <!-- Keyword Groups -->
+                    <div class="form-section">
+                        <label class="form-label">키워드 그룹 비교 (최대 3개)</label>
+                        <div id="keyword-groups-container">
+                            <!-- Group 1 -->
+                            <div class="keyword-group-item clean-input-group" data-index="0">
+                                <div class="group-header">
+                                    <span class="group-num">그룹 1</span>
+                                    <button type="button" class="btn-remove-group" style="display:none;"><i class="fa-solid fa-trash"></i></button>
+                                </div>
+                                <input type="text" class="input-group-name" placeholder="그룹 명 (예: 인공지능)" required value="인공지능">
+                                <input type="text" class="input-keywords" placeholder="쉼표로 키워드 구분 (예: AI, 인공지능, 딥러닝)" required value="AI, 인공지능, 딥러닝">
+                            </div>
+                            <!-- Group 2 -->
+                            <div class="keyword-group-item clean-input-group" data-index="1">
+                                <div class="group-header">
+                                    <span class="group-num">그룹 2</span>
+                                    <button type="button" class="btn-remove-group"><i class="fa-solid fa-trash"></i></button>
+                                </div>
+                                <input type="text" class="input-group-name" placeholder="그룹 명 (예: 메타버스)" required value="메타버스">
+                                <input type="text" class="input-keywords" placeholder="쉼표로 키워드 구분 (예: 메타버스, VR, 가상세계)" required value="메타버스, VR, 가상세계">
+                            </div>
+                        </div>
+                        <button type="button" id="btn-add-group" class="btn-secondary"><i class="fa-solid fa-plus"></i> 키워드 그룹 추가</button>
+                    </div>
+
+                    <!-- Date Picker -->
+                    <div class="form-section">
+                        <label class="form-label">과거 조회 기간</label>
+                        <div class="date-inputs">
+                            <div class="date-field">
+                                <span>시작일</span>
+                                <input type="date" id="start-date" required>
+                            </div>
+                            <div class="date-field">
+                                <span>종료일</span>
+                                <input type="date" id="end-date" required>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Time Unit & Forecast Period -->
+                    <div class="form-section row-layout">
+                        <div class="form-field half">
+                            <label class="form-label" for="time-unit">분석 단위</label>
+                            <select id="time-unit" class="clean-select">
+                                <option value="date" selected>일간 (Date)</option>
+                                <option value="week">주간 (Week)</option>
+                                <option value="month">월간 (Month)</option>
+                            </select>
+                        </div>
+                        <div class="form-field half">
+                            <label class="form-label" for="forecast-steps">예측 기간</label>
+                            <select id="forecast-steps" class="clean-select">
+                                <option value="15">15일/주/월</option>
+                                <option value="30" selected>30일/주/월</option>
+                                <option value="60">60일/주/월</option>
+                                <option value="90">90일/주/월</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- Filters -->
+                    <div class="form-section accordion">
+                        <div class="accordion-header" id="filter-accordion-toggle">
+                            <span><i class="fa-solid fa-filter"></i> 상세 세부 필터</span>
+                            <i class="fa-solid fa-chevron-down toggle-icon"></i>
+                        </div>
+                        <div class="accordion-body id="filter-body" style="display: none;">
+                            <div class="form-field">
+                                <label class="form-label">기기 구분</label>
+                                <div class="radio-group">
+                                    <label class="radio-label"><input type="radio" name="device" value="" checked> 전체</label>
+                                    <label class="radio-label"><input type="radio" name="device" value="pc"> PC</label>
+                                    <label class="radio-label"><input type="radio" name="device" value="mo"> 모바일</label>
+                                </div>
+                            </div>
+                            <div class="form-field">
+                                <label class="form-label">성별 구분</label>
+                                <div class="radio-group">
+                                    <label class="radio-label"><input type="radio" name="gender" value="" checked> 전체</label>
+                                    <label class="radio-label"><input type="radio" name="gender" value="f"> 여성</label>
+                                    <label class="radio-label"><input type="radio" name="gender" value="m"> 남성</label>
+                                </div>
+                            </div>
+                            <div class="form-field">
+                                <label class="form-label">연령대 (중복선택 가능)</label>
+                                <div class="checkbox-grid">
+                                    <label class="check-label"><input type="checkbox" name="ages" value="1"> ~12세</label>
+                                    <label class="check-label"><input type="checkbox" name="ages" value="2"> 13~18세</label>
+                                    <label class="check-label"><input type="checkbox" name="ages" value="3"> 19~24세</label>
+                                    <label class="check-label"><input type="checkbox" name="ages" value="4"> 25~29세</label>
+                                    <label class="check-label"><input type="checkbox" name="ages" value="5"> 30~34세</label>
+                                    <label class="check-label"><input type="checkbox" name="ages" value="6"> 35~39세</label>
+                                    <label class="check-label"><input type="checkbox" name="ages" value="7"> 40~44세</label>
+                                    <label class="check-label"><input type="checkbox" name="ages" value="8"> 45~49세</label>
+                                    <label class="check-label"><input type="checkbox" name="ages" value="9"> 50~54세</label>
+                                    <label class="check-label"><input type="checkbox" name="ages" value="10"> 55~59세</label>
+                                    <label class="check-label"><input type="checkbox" name="ages" value="11"> 60세~</label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Submit Button -->
+                    <button type="submit" id="btn-submit" class="btn-primary">
+                        <i class="fa-solid fa-wand-magic-sparkles"></i> 트렌드 예측 분석 실행
+                    </button>
+                </form>
+            </aside>
+
+            <!-- Dashboard Content -->
+            <main class="dashboard-content">
+                <!-- Warning or Tip Block -->
+                <div class="clean-card api-alert api-info" id="api-status-banner">
+                    <div class="alert-icon"><i class="fa-solid fa-circle-info"></i></div>
+                    <div class="alert-content">
+                        <h4>분석 엔진 시동 완료</h4>
+                        <p>분석 조건을 왼쪽에서 지정하신 후 <strong>'트렌드 예측 분석 실행'</strong> 버튼을 클릭하여 트렌드를 예측하세요.</p>
+                    </div>
+                </div>
+
+                <!-- Analysis Summary Cards (Generated dynamically) -->
+                <section class="summary-section" id="summary-cards-container" style="display:none;">
+                    <!-- Dynamically generated summary cards will go here -->
+                </section>
+
+                <!-- Chart Card -->
+                <section class="clean-card chart-container">
+                    <div class="chart-header-row">
+                        <h2 class="section-title"><i class="fa-solid fa-chart-area"></i> 트렌드 예측 시각화</h2>
+                        <div class="chart-legend">
+                            <span class="legend-item"><span class="legend-color hist"></span>과거 트렌드</span>
+                            <span class="legend-item"><span class="legend-color fore"></span>미래 예측</span>
+                        </div>
+                    </div>
+                    <div id="chart-loading" class="chart-overlay" style="display: none;">
+                        <div class="spinner"></div>
+                        <p>네이버 데이터랩 데이터를 분석하고 머신러닝 예측을 수행하는 중...</p>
+                    </div>
+                    <div id="chart-placeholder" class="chart-overlay">
+                        <i class="fa-solid fa-chart-line-up placeholder-icon"></i>
+                        <p>분석 조건을 입력한 후 <strong>'트렌드 예측 분석 실행'</strong> 버튼을 클릭하세요.</p>
+                    </div>
+                    <div id="trend-chart"></div>
+                </section>
+
+                <!-- Report Details -->
+                <section class="clean-card report-details" id="report-section" style="display: none;">
+                    <h2 class="section-title"><i class="fa-solid fa-file-invoice"></i> 예측 모델 상세 리포트</h2>
+                    <div class="report-grid">
+                        <div class="report-col">
+                            <h3><i class="fa-solid fa-brain text-purple"></i> 적용된 예측 모델</h3>
+                            <p id="report-model-desc">Holt-Winters 계절성 시계열 모델을 우선적으로 적용하며, 데이터가 불충분할 경우 다항 회귀분석(Polynomial Regression)으로 보정됩니다.</p>
+                        </div>
+                        <div class="report-col">
+                            <h3><i class="fa-solid fa-lightbulb text-yellow"></i> 트렌드 요약 및 해석</h3>
+                            <ul id="report-insights">
+                                <!-- Insights list will be rendered dynamically -->
+                            </ul>
+                        </div>
+                    </div>
+                </section>
+            </main>
+        </div>
+    </div>
+
+    <!-- Custom Scripts -->
+    <script src="/static/js/chart-helper.js"></script>
+    <script src="/static/js/app.js"></script>
+</body>
+</html>
