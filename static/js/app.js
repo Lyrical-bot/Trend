@@ -283,4 +283,173 @@ document.addEventListener('DOMContentLoaded', () => {
         const day = String(date.getDate()).padStart(2, '0');
         return `${year}-${month}-${day}`;
     }
+
+    // [추가] 가속도 랭킹 기간 기본값 설정 (최근 3일)
+    const velEndDate = new Date();
+    const velStartDate = new Date();
+    velStartDate.setDate(velEndDate.getDate() - 2);
+
+    const velStartInput = document.getElementById('vel-start-date');
+    const velEndInput = document.getElementById('vel-end-date');
+    if (velStartInput && velEndInput) {
+        velStartInput.value = formatDate(velStartDate);
+        velEndInput.value = formatDate(velEndDate);
+    }
+
+    // [추가] Weak Signal 엔진 기준일 기본값 설정 (오늘)
+    const weakStartInput = document.getElementById('weak-start-date');
+    const weakEndInput = document.getElementById('weak-end-date');
+    if (weakStartInput && weakEndInput) {
+        const weakStartDate = new Date();
+        weakStartDate.setDate(weakStartDate.getDate() - 2); // 기본 3일 기간처럼 보이게
+        weakStartInput.value = formatDate(weakStartDate);
+        weakEndInput.value = formatDate(new Date());
+    }
+
+    // [추가] 가속도 랭킹 렌더링 호출
+    if (typeof window.fetchVelocityRanking === 'function') {
+        window.fetchVelocityRanking();
+    }
+
+    // [추가] Weak Signal 예측 엔진 호출
+    if (typeof window.fetchWeakSignals === 'function') {
+        window.fetchWeakSignals();
+    }
 });
+
+// 가속도 랭킹을 서버에서 불러와 화면에 그리는 전역 함수
+window.fetchVelocityRanking = async function() {
+    const tbody = document.getElementById('velocity-ranking-list');
+    const velStartInput = document.getElementById('vel-start-date');
+    const velEndInput = document.getElementById('vel-end-date');
+    
+    if (!tbody) return; // 모듈이 없으면 실행 안함
+
+    let queryParams = '';
+    if (velStartInput && velEndInput && velStartInput.value && velEndInput.value) {
+        queryParams = `?start_date=${velStartInput.value}&end_date=${velEndInput.value}`;
+    }
+
+    tbody.innerHTML = `<tr>
+        <td colspan="5" style="padding: 30px; color: var(--text-muted);">
+            <div class="spinner" style="width:20px;height:20px;display:inline-block;vertical-align:middle;margin-right:10px;"></div>
+            데이터를 불러오는 중...
+        </td>
+    </tr>`;
+
+    try {
+        const response = await fetch(`/api/velocity-ranking${queryParams}`);
+        const result = await response.json();
+
+        if (!response.ok) {
+            tbody.innerHTML = `<tr><td colspan="5" style="padding: 30px; color: var(--text-muted);">
+                <i class="fa-solid fa-circle-exclamation"></i> ${result.detail || '가속도 랭킹을 불러올 수 없습니다.'}
+            </td></tr>`;
+            return;
+        }
+
+        const data = result.data;
+        if (!data || data.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="5" style="padding: 30px; color: var(--text-muted);">데이터가 없습니다.</td></tr>`;
+            return;
+        }
+
+        let html = '';
+        data.forEach((row, index) => {
+            let symbol = '';
+            let color = '';
+            if (row.velocity_score > 50) {
+                symbol = '🚀🚀 +'; color = '#ef4444'; // 빨간색 강조
+            } else if (row.velocity_score > 0) {
+                symbol = '🚀 +'; color = '#ef4444'; 
+            } else {
+                symbol = '📉 '; color = '#3b82f6'; // 파란색
+            }
+
+            html += `
+                <tr style="border-bottom: 1px solid var(--border-light); transition: background-color 0.2s;">
+                    <td style="padding: 12px; font-weight: 700; color: var(--text-main);">${index + 1}</td>
+                    <td style="padding: 12px; text-align: left; font-weight: 500;">${row.keyword}</td>
+                    <td style="padding: 12px; color: var(--text-muted);">${row.avg_prev_7.toLocaleString()}건</td>
+                    <td style="padding: 12px; font-weight: 600;">${row.avg_recent_3.toLocaleString()}건</td>
+                    <td style="padding: 12px; font-weight: 700; color: ${color};">${symbol}${row.velocity_score}%</td>
+                </tr>
+            `;
+        });
+        tbody.innerHTML = html;
+
+    } catch (error) {
+        tbody.innerHTML = `<tr><td colspan="5" style="padding: 30px; color: var(--text-muted);">서버와 연결할 수 없습니다.</td></tr>`;
+    }
+};
+
+// Weak Signal 감지 엔진 데이터를 불러오는 전역 함수
+window.fetchWeakSignals = async function() {
+    const tbody = document.getElementById('weak-signal-list');
+    const weakEndInput = document.getElementById('weak-end-date');
+    
+    if (!tbody) return;
+
+    let queryParams = '';
+    if (weakEndInput && weakEndInput.value) {
+        queryParams = `?target_date=${weakEndInput.value}`;
+    }
+
+    tbody.innerHTML = `<tr>
+        <td colspan="10" style="padding: 30px; color: var(--text-muted);">
+            <div class="spinner" style="width:20px;height:20px;display:inline-block;vertical-align:middle;margin-right:10px;"></div>
+            AI 모델이 피처를 분석하고 있습니다...
+        </td>
+    </tr>`;
+
+    try {
+        const response = await fetch(`/api/weak-signals${queryParams}`);
+        const result = await response.json();
+
+        if (!response.ok) {
+            tbody.innerHTML = `<tr><td colspan="10" style="padding: 30px; color: var(--text-muted);">
+                <i class="fa-solid fa-circle-exclamation"></i> ${result.detail || '데이터를 불러올 수 없습니다.'}
+            </td></tr>`;
+            return;
+        }
+
+        const data = result.data;
+        if (!data || data.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="10" style="padding: 30px; color: var(--text-muted);">데이터가 없습니다.</td></tr>`;
+            return;
+        }
+
+        let html = '';
+        data.forEach((row, index) => {
+            // 시그널 등급 뱃지 색상
+            let badgeStyle = 'background: #374151; color: #d1d5db;'; // IGNORE (Gray)
+            if (row.signal_level === 'VERY HIGH') badgeStyle = 'background: #ef4444; color: white; box-shadow: 0 0 10px rgba(239, 68, 68, 0.5);'; // Red
+            else if (row.signal_level === 'HIGH') badgeStyle = 'background: #f97316; color: white;'; // Orange
+            else if (row.signal_level === 'MEDIUM') badgeStyle = 'background: #10b981; color: white;'; // Green
+            else if (row.signal_level === 'LOW') badgeStyle = 'background: #6b7280; color: white;'; // Light Gray
+
+            html += `
+                <tr style="border-bottom: 1px solid var(--border-light); transition: background-color 0.2s;">
+                    <td style="padding: 12px; font-weight: 700; color: var(--text-main);">${index + 1}</td>
+                    <td style="padding: 12px; text-align: left; font-weight: 700;">${row.keyword}</td>
+                    <td style="padding: 12px; font-weight: 800; font-size: 1.1rem; color: #8b5cf6;">${row.trend_score}</td>
+                    <td style="padding: 12px;">
+                        <span style="display: inline-block; padding: 4px 10px; border-radius: 20px; font-size: 0.75rem; font-weight: 700; ${badgeStyle}">
+                            ${row.signal_level}
+                        </span>
+                    </td>
+                    <td style="padding: 12px; color: var(--text-muted);">${row.burst_ratio}배<br><span style="font-size:0.7rem; color: #8b5cf6;">(${row.burst_score}점)</span></td>
+                    <td style="padding: 12px; color: var(--text-muted);">${row.persistence_score}</td>
+                    <td style="padding: 12px; color: var(--text-muted);">${row.acceleration_score}</td>
+                    <td style="padding: 12px; color: var(--text-muted);">${row.stability_score}</td>
+                    <td style="padding: 12px; color: var(--text-muted);">${row.volume_score}</td>
+                    <td style="padding: 12px; font-weight: 600;">${row.growth_rate > 0 ? '+' : ''}${Math.round(row.growth_rate * 100)}%</td>
+                </tr>
+            `;
+        });
+        tbody.innerHTML = html;
+
+    } catch (error) {
+        tbody.innerHTML = `<tr><td colspan="10" style="padding: 30px; color: var(--text-muted);">서버와 연결할 수 없습니다.</td></tr>`;
+    }
+};
