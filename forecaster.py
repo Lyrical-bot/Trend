@@ -4,6 +4,139 @@ from datetime import datetime, timedelta
 from typing import List, Dict, Any, Tuple
 from prophet import Prophet
 
+MIN_TRAIN_POINTS = 30
+
+def _smooth_outliers(df: pd.DataFrame, column: str = 'y', factor: float = 2.0) -> pd.DataFrame:
+    """IQR 기반으로 극단적 이상치를 상한/하한 경계로 클램핑합니다."""
+    df = df.copy()
+    Q1 = df[column].quantile(0.25)
+    Q3 = df[column].quantile(0.75)
+    IQR = Q3 - Q1
+    if IQR == 0:
+        return df
+    lower = max(0, Q1 - factor * IQR)
+    upper = Q3 + factor * IQR
+    df[column] = df[column].clip(lower=lower, upper=upper)
+    return df
+
+def _prepare_dataframe(historical_data: List[Dict[str, Any]]) -> pd.DataFrame:
+    df = pd.DataFrame(historical_data)
+    df = df.rename(columns={'period': 'ds', 'ratio': 'y'})
+    df['ds'] = pd.to_datetime(df['ds'])
+    df['y'] = df['y'].astype(float).clip(lower=0)
+    return df.sort_values('ds').reset_index(drop=True)
+
+def _freq_for_time_unit(time_unit: str) -> str:
+    if time_unit == 'date':
+        return 'D'
+    if time_unit == 'week':
+        return 'W'
+    return 'MS'
+
+def _use_yearly_seasonality(df: pd.DataFrame) -> bool:
+    data_span_days = (df['ds'].max() - df['ds'].min()).days
+    return data_span_days >= 700
+
+def _build_model(time_unit: str, use_yearly: bool) -> Prophet:
+    model = Prophet(
+        daily_seasonality=False,
+        weekly_seasonality=True if time_unit == 'date' else False,
+        yearly_seasonality=use_yearly,
+        changepoint_prior_scale=0.01,
+        seasonality_prior_scale=5.0,
+        holidays_prior_scale=2.0
+    )
+    try:
+        model.add_country_holidays(country_name='KR')
+    except Exception:
+        pass
+    return model
+
+def _fit_model(df: pd.DataFrame, time_unit: str) -> Prophet:
+    train_df = _smooth_outliers(df)
+    model = _build_model(time_unit, _use_yearly_seasonality(train_df))
+    model.fit(train_df)
+    return model
+
+def _inverse_forecast_value(value: float) -> float:
+    return max(0, float(value))
+
+def _format_forecast_row(row: pd.Series) -> Dict[str, Any]:
+    return {
+        "period": row['ds'].strftime('%Y-%m-%d'),
+        "ratio": round(_inverse_forecast_value(row['yhat']), 2),
+        "isForecast": True,
+        "yhat_lower": round(_inverse_forecast_value(row['yhat_lower']), 2),
+        "yhat_upper": round(_inverse_forecast_value(row['yhat_upper']), 2)
+    }
+
+def _calculate_metrics(y_true: List[float], y_pred: List[float]) -> Dict[str, float]:
+    y_true_arr = np.array(y_true, dtype=float)
+    y_pred_arr = np.array(y_pred, dtype=float)
+    if len(y_true_arr) == 0:
+        return {"mape": 0.0, "smape": 0.0, "mae": 0.0, "directionAccuracy": 0.0}
+
+    mask = y_true_arr != 0
+    mape = np.mean(np.abs((y_true_arr[mask] - y_pred_arr[mask]) / y_true_arr[mask])) * 100 if np.sum(mask) > 0 else 0.0
+
+    denom = (np.abs(y_true_arr) + np.abs(y_pred_arr)) / 2
+    smape_mask = denom != 0
+    smape = np.mean(np.abs(y_true_arr[smape_mask] - y_pred_arr[smape_mask]) / denom[smape_mask]) * 100 if np.sum(smape_mask) > 0 else 0.0
+    mae = np.mean(np.abs(y_true_arr - y_pred_arr))
+
+    if len(y_true_arr) >= 2:
+        actual_direction = np.sign(np.diff(y_true_arr))
+        pred_direction = np.sign(np.diff(y_pred_arr))
+        direction_accuracy = np.mean(actual_direction == pred_direction) * 100
+    else:
+        direction_accuracy = 0.0
+
+    return {
+        "mape": round(float(mape), 2),
+        "smape": round(float(smape), 2),
+        "mae": round(float(mae), 2),
+        "directionAccuracy": round(float(direction_accuracy), 2)
+    }
+
+def _predict_periods(train_df: pd.DataFrame, periods: int, time_unit: str = 'date') -> pd.DataFrame:
+    model = _fit_model(train_df, time_unit)
+    future = model.make_future_dataframe(periods=periods, freq=_freq_for_time_unit(time_unit))
+    forecast = model.predict(future)
+    return forecast[forecast['ds'] > train_df['ds'].max()].reset_index(drop=True)
+
+def _rolling_backtest(df: pd.DataFrame, test_days: int, folds: int = 3) -> Dict[str, Any]:
+    max_folds = min(folds, max(0, (len(df) - MIN_TRAIN_POINTS) // test_days))
+    fold_results = []
+
+    for fold in range(max_folds, 0, -1):
+        test_start = len(df) - (fold * test_days)
+        test_end = test_start + test_days
+        if test_start < MIN_TRAIN_POINTS:
+            continue
+
+        train_df = df.iloc[:test_start].copy()
+        test_df = df.iloc[test_start:test_end].copy()
+        test_forecast = _predict_periods(train_df, len(test_df), 'date')
+
+        y_true = test_df['y'].tolist()
+        y_pred = [_inverse_forecast_value(row['yhat']) for _, row in test_forecast.iterrows()]
+        metrics = _calculate_metrics(y_true, y_pred)
+        metrics["startDate"] = test_df['ds'].iloc[0].strftime('%Y-%m-%d')
+        metrics["endDate"] = test_df['ds'].iloc[-1].strftime('%Y-%m-%d')
+        fold_results.append(metrics)
+
+    if not fold_results:
+        return {"folds": 0, "results": []}
+
+    return {
+        "folds": len(fold_results),
+        "avgMape": round(float(np.mean([r["mape"] for r in fold_results])), 2),
+        "avgSmape": round(float(np.mean([r["smape"] for r in fold_results])), 2),
+        "avgMae": round(float(np.mean([r["mae"] for r in fold_results])), 2),
+        "avgDirectionAccuracy": round(float(np.mean([r["directionAccuracy"] for r in fold_results])), 2),
+        "results": fold_results
+    }
+
 def forecast_trend(
     historical_data: List[Dict[str, Any]],
     time_unit: str,
@@ -15,32 +148,9 @@ def forecast_trend(
     if not historical_data or len(historical_data) < 5:
         return [], {"error": "예측을 수행하기에 과거 데이터가 충분하지 않습니다. (최소 5개 이상의 데이터 포인트 필요)"}
 
-    # 1. Prophet을 위한 데이터프레임 변환 (ds, y)
-    df = pd.DataFrame(historical_data)
-    df = df.rename(columns={'period': 'ds', 'ratio': 'y'})
-    df['ds'] = pd.to_datetime(df['ds'])
-    df['y'] = df['y'].astype(float)
-    df = df.sort_values('ds').reset_index(drop=True)
-
-    # 2. Prophet 모델 설정 및 학습
-    model = Prophet(
-        daily_seasonality=False,
-        weekly_seasonality=True if time_unit == 'date' else False,
-        yearly_seasonality=True
-    )
-    model.fit(df)
-
-    # 3. 미래 날짜 생성
-    if time_unit == 'date':
-        freq = 'D'
-    elif time_unit == 'week':
-        freq = 'W'
-    else:
-        freq = 'MS'
-
-    future = model.make_future_dataframe(periods=forecast_steps, freq=freq)
-    
-    # 4. 예측 수행
+    df = _prepare_dataframe(historical_data)
+    model = _fit_model(df, time_unit)
+    future = model.make_future_dataframe(periods=forecast_steps, freq=_freq_for_time_unit(time_unit))
     forecast = model.predict(future)
 
     # 미래 예측 기간만 필터링
@@ -50,17 +160,10 @@ def forecast_trend(
     # 5. 결과 리스트 포맷팅 (최소 0 이상으로 제한)
     forecast_list = []
     for _, row in future_forecast.iterrows():
-        val = max(0, row['yhat'])
-        forecast_list.append({
-            "period": row['ds'].strftime('%Y-%m-%d'),
-            "ratio": round(float(val), 2),
-            "isForecast": True,
-            "yhat_lower": round(float(max(0, row['yhat_lower'])), 2),
-            "yhat_upper": round(float(max(0, row['yhat_upper'])), 2)
-        })
+        forecast_list.append(_format_forecast_row(row))
 
     # 6. 예측 분석 리포트 요약 정보
-    model_used = "Facebook Prophet"
+    model_used = "Facebook Prophet + IQR Smoothing"
     
     all_y = list(df['y']) + [f['ratio'] for f in forecast_list]
     all_ds = list(df['ds']) + [pd.to_datetime(f['period']) for f in forecast_list]
@@ -93,7 +196,8 @@ def forecast_trend(
         "maxDate": max_date,
         "maxRatio": max_ratio,
         "lastHistoricalValue": round(float(last_hist_val), 2),
-        "lastForecastValue": round(float(last_fore_val), 2)
+        "lastForecastValue": round(float(last_fore_val), 2),
+        "recommendedHorizon": "7~14일 방향성 중심"
     }
 
     return forecast_list, summary
@@ -110,28 +214,13 @@ def evaluate_trend_accuracy(
     if not historical_data or len(historical_data) <= test_days:
         return [], {"error": "백테스트를 수행하기에 데이터가 충분하지 않습니다."}
 
-    # 1. Pandas DataFrame 변환
-    df = pd.DataFrame(historical_data)
-    df = df.rename(columns={'period': 'ds', 'ratio': 'y'})
-    df['ds'] = pd.to_datetime(df['ds'])
-    df['y'] = df['y'].astype(float)
-    df = df.sort_values('ds').reset_index(drop=True)
+    df = _prepare_dataframe(historical_data)
 
     # 2. Train / Test 분리
     train_df = df.iloc[:-test_days]
     test_df = df.iloc[-test_days:]
 
-    # 3. Train 데이터로 모델 학습
-    model = Prophet(
-        daily_seasonality=False,
-        weekly_seasonality=True,
-        yearly_seasonality=True
-    )
-    model.fit(train_df)
-
-    # 4. 미래(Test) 날짜 예측
-    future = model.make_future_dataframe(periods=test_days, freq='D')
-    forecast = model.predict(future)
+    forecast = _predict_periods(train_df, test_days, 'date')
 
     # 5. 결과 매핑
     result_list = []
@@ -156,7 +245,7 @@ def evaluate_trend_accuracy(
         
         # 예측값 찾기
         f_row = test_forecast.iloc[i]
-        predicted_val = max(0, f_row['yhat'])
+        predicted_val = _inverse_forecast_value(f_row['yhat'])
         
         y_true.append(actual_val)
         y_pred.append(predicted_val)
@@ -172,28 +261,25 @@ def evaluate_trend_accuracy(
             "ratio": round(float(predicted_val), 2),
             "isForecast": True,
             "type": "predicted",
-            "yhat_lower": round(float(max(0, f_row['yhat_lower'])), 2),
-            "yhat_upper": round(float(max(0, f_row['yhat_upper'])), 2)
+            "yhat_lower": round(_inverse_forecast_value(f_row['yhat_lower']), 2),
+            "yhat_upper": round(_inverse_forecast_value(f_row['yhat_upper']), 2)
         })
 
-    # 6. 오차율 (MAPE) 계산
-    y_true_arr = np.array(y_true)
-    y_pred_arr = np.array(y_pred)
-    
-    mask = y_true_arr != 0
-    if np.sum(mask) > 0:
-        mape = np.mean(np.abs((y_true_arr[mask] - y_pred_arr[mask]) / y_true_arr[mask])) * 100
-    else:
-        mape = 0.0
-        
+    metrics = _calculate_metrics(y_true, y_pred)
+    rolling = _rolling_backtest(df, test_days=test_days)
+    mape = metrics["mape"]
     accuracy = max(0, 100 - mape)
 
     summary = {
-        "modelUsed": "Facebook Prophet (백테스트 모드)",
+        "modelUsed": "Facebook Prophet + IQR Smoothing (백테스트 모드)",
         "trainDays": len(train_df),
         "testDays": test_days,
         "mape": round(float(mape), 2),
-        "accuracy": round(float(accuracy), 2)
+        "smape": metrics["smape"],
+        "mae": metrics["mae"],
+        "directionAccuracy": metrics["directionAccuracy"],
+        "accuracy": round(float(accuracy), 2),
+        "rollingBacktest": rolling
     }
 
     return result_list, summary

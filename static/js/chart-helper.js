@@ -20,6 +20,8 @@ class TrendChartHelper {
         const strokeDashArray = [];
         const strokeColors = [];
         const fillColors = [];
+        const markerSizes = [];
+        const signalAnnotations = [];
         
         let allPeriods = [];
 
@@ -31,6 +33,39 @@ class TrendChartHelper {
         results.forEach((group, index) => {
             const color = this.colors[index % this.colors.length];
             const fadeColor = this.colorsFade[index % this.colorsFade.length];
+            const signals = Array.isArray(group.signals) ? group.signals : [];
+            const trainColor = '#6b7280';
+            const actualColor = '#3b82f6';
+            const forecastColor = '#1abc9c';
+            const signalColor = '#ef4444';
+
+            signals.forEach(signal => {
+                const point = group.data.find(item => item.period === signal.date && !item.isForecast);
+                if (!point) return;
+
+                signalAnnotations.push({
+                    x: signal.date,
+                    y: point.ratio,
+                    marker: {
+                        size: 7,
+                        fillColor: signalColor,
+                        strokeColor: '#ffffff',
+                        strokeWidth: 2,
+                        radius: 2
+                    },
+                    label: {
+                        borderColor: signalColor,
+                        offsetY: 0,
+                        style: {
+                            color: '#ffffff',
+                            background: signalColor,
+                            fontSize: '11px',
+                            fontWeight: 700
+                        },
+                        text: `${signal.label || '유행 전조'} ${signal.score || ''}점`
+                    }
+                });
+            });
 
             if (isBacktest) {
                 // 백테스트 모드: train(학습), actual(실제), predicted(예측) 3가지 라인
@@ -72,18 +107,21 @@ class TrendChartHelper {
 
                 series.push({ name: `${group.title} (과거 학습)`, data: trainData });
                 strokeDashArray.push(0);
-                strokeColors.push(color);
-                fillColors.push(color);
+                strokeColors.push(trainColor);
+                fillColors.push(trainColor);
+                markerSizes.push(0);
 
                 series.push({ name: `${group.title} (숨겨둔 실제 데이터)`, data: actualData });
                 strokeDashArray.push(0);
-                strokeColors.push('#3b82f6'); // 파란색 실선으로 실제 데이터 강조
-                fillColors.push('#3b82f6');
+                strokeColors.push(actualColor);
+                fillColors.push(actualColor);
+                markerSizes.push(0);
 
                 series.push({ name: `${group.title} (AI 예측)`, data: predictedData });
                 strokeDashArray.push(5);
-                strokeColors.push(color);
-                fillColors.push(fadeColor);
+                strokeColors.push(forecastColor);
+                fillColors.push(forecastColor);
+                markerSizes.push(0);
 
             } else {
                 // 일반 모드 (과거 vs 미래)
@@ -104,15 +142,73 @@ class TrendChartHelper {
                     return null;
                 });
 
-                series.push({ name: `${group.title} (과거)`, data: actualData });
-                strokeDashArray.push(0);
-                strokeColors.push(color);
-                fillColors.push(color);
+                // 신뢰구간 (상한/하한) 데이터 구성
+                const upperData = [];
+                const lowerData = [];
+                
+                allPeriods.forEach((p, idx) => {
+                    const item = group.data.find(d => d.period === p && d.isForecast);
+                    if (item && item.yhat_lower !== undefined && item.yhat_upper !== undefined) {
+                        upperData.push(item.yhat_upper);
+                        lowerData.push(item.yhat_lower);
+                    } else {
+                        // 연결부
+                        const aItem = group.data.find(d => d.period === p && !d.isForecast);
+                        const isNextFore = group.data.find(d => d.period === allPeriods[idx+1] && d.isForecast);
+                        if (aItem && isNextFore) {
+                            upperData.push(aItem.ratio);
+                            lowerData.push(aItem.ratio);
+                        } else {
+                            upperData.push(null);
+                            lowerData.push(null);
+                        }
+                    }
+                });
 
-                series.push({ name: `${group.title} (예측)`, data: forecastData });
+                // 1. 예측 범위 (상한/하한 점선)
+                const hasConfidence = upperData.some(val => val !== null);
+                if (hasConfidence) {
+                    series.push({ name: `${group.title} (예측 상한)`, type: 'line', data: upperData });
+                    strokeDashArray.push(2);
+                    strokeColors.push(fadeColor);
+                    fillColors.push('transparent');
+                    markerSizes.push(0);
+
+                    series.push({ name: `${group.title} (예측 하한)`, type: 'line', data: lowerData });
+                    strokeDashArray.push(2);
+                    strokeColors.push(fadeColor);
+                    fillColors.push('transparent');
+                    markerSizes.push(0);
+                }
+
+                // 2. 과거 데이터
+                series.push({ name: `${group.title} (과거)`, type: 'line', data: actualData });
+                strokeDashArray.push(0);
+                strokeColors.push('#6b7280'); // 과거 트렌드는 회색으로 통일
+                fillColors.push('#6b7280');
+                markerSizes.push(0);
+
+                // 3. 예측 데이터
+                series.push({ name: `${group.title} (예측)`, type: 'line', data: forecastData });
                 strokeDashArray.push(5);
-                strokeColors.push(color);
+                strokeColors.push(color); // 미래 예측은 그룹 컬러(기본 민트색)
                 fillColors.push(fadeColor);
+                markerSizes.push(0);
+
+                const signalData = allPeriods.map(period => {
+                    const signal = signals.find(item => item.date === period);
+                    if (!signal) return null;
+                    const point = group.data.find(item => item.period === period && !item.isForecast);
+                    return point ? point.ratio : null;
+                });
+
+                if (signalData.some(value => value !== null)) {
+                    series.push({ name: `${group.title} (유행 전조 감지)`, type: 'scatter', data: signalData });
+                    strokeDashArray.push(0);
+                    strokeColors.push(signalColor);
+                    fillColors.push(signalColor);
+                    markerSizes.push(7);
+                }
             }
         });
 
@@ -151,11 +247,24 @@ class TrendChartHelper {
             colors: strokeColors,
             stroke: {
                 curve: 'smooth',
-                width: 3,
+                width: series.map(s => {
+                    if (s.name.includes('상한') || s.name.includes('하한')) return 1;
+                    if (s.name.includes('유행 전조')) return 0;
+                    return 3;
+                }),
                 dashArray: strokeDashArray
             },
+            markers: {
+                size: markerSizes,
+                strokeColors: '#ffffff',
+                strokeWidth: 2,
+                hover: {
+                    sizeOffset: 3
+                }
+            },
             fill: {
-                type: 'solid'
+                type: 'solid',
+                colors: fillColors
             },
             grid: {
                 borderColor: 'rgba(0, 0, 0, 0.05)',
@@ -204,17 +313,36 @@ class TrendChartHelper {
                 }
             },
             tooltip: {
-                theme: 'light',
                 shared: true,
                 intersect: false,
-                x: {
-                    show: true
-                },
-                y: {
-                    formatter: function(val) {
-                        return val !== null ? val.toFixed(0) + '건' : undefined;
-                    }
+                custom: function({series, seriesIndex, dataPointIndex, w}) {
+                    const data = w.globals.initialSeries;
+                    const category = w.globals.categoryLabels[dataPointIndex];
+                    
+                    let html = `<div style="padding: 12px; background: rgba(255, 255, 255, 0.95); border: 1px solid var(--card-border); border-radius: 8px; box-shadow: var(--shadow-md); backdrop-filter: blur(4px);">`;
+                    html += `<div style="margin-bottom: 10px; font-weight: 700; color: var(--text-muted); font-size: 12px;">${category}</div>`;
+                    
+                    data.forEach((s, idx) => {
+                        const val = s.data[dataPointIndex];
+                        if (val !== null && val !== undefined) {
+                            // w.config.colors에 우리가 주입한 strokeColors가 들어있음
+                            const color = w.config.colors[idx] || '#111827';
+                            
+                            // 상하한선처럼 투명도가 들어간 색상이면 그대로 쓰고, 아니면 그대로 씀
+                            html += `<div style="display: flex; align-items: center; margin-bottom: 6px;">
+                                <span style="display: inline-block; width: 10px; height: 10px; border-radius: 50%; background-color: ${color}; margin-right: 8px; box-shadow: 0 0 0 1px rgba(0,0,0,0.05);"></span>
+                                <span style="font-size: 13px; color: var(--text-main); margin-right: 16px;">${s.name}</span>
+                                <span style="font-weight: 700; font-size: 13px; color: var(--text-main); margin-left: auto;">${val.toFixed(0)}건</span>
+                            </div>`;
+                        }
+                    });
+                    
+                    html += `</div>`;
+                    return html;
                 }
+            },
+            annotations: {
+                points: signalAnnotations
             }
         };
 

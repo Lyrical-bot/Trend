@@ -335,7 +335,7 @@ window.fetchVelocityRanking = async function() {
 
     let queryParams = '';
     if (velStartInput && velEndInput && velStartInput.value && velEndInput.value) {
-        queryParams = `?start_date=${velStartInput.value}&end_date=${velEndInput.value}`;
+        queryParams = `?start_date=${velStartInput.value}&end_date=${velEndInput.value}&use_live=false`;
     }
 
     tbody.innerHTML = `<tr>
@@ -427,38 +427,113 @@ window.fetchWeakSignals = async function() {
             return;
         }
 
-        let html = '';
-        data.forEach((row, index) => {
-            // 시그널 등급 뱃지 색상
-            let badgeStyle = 'background: #374151; color: #d1d5db;'; // IGNORE (Gray)
-            if (row.signal_level === 'VERY HIGH') badgeStyle = 'background: #ef4444; color: white; box-shadow: 0 0 10px rgba(239, 68, 68, 0.5);'; // Red
-            else if (row.signal_level === 'HIGH') badgeStyle = 'background: #f97316; color: white;'; // Orange
-            else if (row.signal_level === 'MEDIUM') badgeStyle = 'background: #10b981; color: white;'; // Green
-            else if (row.signal_level === 'LOW') badgeStyle = 'background: #6b7280; color: white;'; // Light Gray
-
-            html += `
-                <tr onclick="window.fetchSingleKeywordForecast('${row.keyword}')" style="border-bottom: 1px solid var(--border-light); transition: background-color 0.2s; cursor: pointer;" onmouseover="this.style.backgroundColor='rgba(139, 92, 246, 0.1)'" onmouseout="this.style.backgroundColor='transparent'">
-                    <td style="padding: 12px; font-weight: 700; color: var(--text-main);">${index + 1}</td>
-                    <td style="padding: 12px; text-align: left; font-weight: 700;">${row.keyword}</td>
-                    <td style="padding: 12px; font-weight: 800; font-size: 1.1rem; color: #8b5cf6;">${row.trend_score}</td>
-                    <td style="padding: 12px;">
-                        <span style="display: inline-block; padding: 4px 10px; border-radius: 20px; font-size: 0.75rem; font-weight: 700; ${badgeStyle}">
-                            ${row.signal_level}
-                        </span>
-                    </td>
-                    <td style="padding: 12px; color: var(--text-muted);">${row.burst_ratio}배<br><span style="font-size:0.7rem; color: #8b5cf6;">(${row.burst_score}점)</span></td>
-                    <td style="padding: 12px; color: var(--text-muted);">${row.persistence_score}</td>
-                    <td style="padding: 12px; color: var(--text-muted);">${row.acceleration_score}</td>
-                    <td style="padding: 12px; color: var(--text-muted);">${row.stability_score}</td>
-                    <td style="padding: 12px; color: var(--text-muted);">${row.volume_score}</td>
-                    <td style="padding: 12px; font-weight: 600;">${row.growth_rate > 0 ? '+' : ''}${Math.round(row.growth_rate * 100)}%</td>
-                </tr>
-            `;
-        });
-        tbody.innerHTML = html;
+        // 전역 변수에 데이터 저장 (페이지네이션 용)
+        window.weakSignalData = result.data;
+        window.currentWeakSignalPage = 1;
+        
+        // 첫 페이지 렌더링
+        window.renderWeakSignalPage(1);
 
     } catch (error) {
         tbody.innerHTML = `<tr><td colspan="10" style="padding: 30px; color: var(--text-muted);">서버와 연결할 수 없습니다.</td></tr>`;
+    }
+};
+
+// 전역 변수
+window.weakSignalData = [];
+window.currentWeakSignalPage = 1;
+const WEAK_SIGNAL_PER_PAGE = 20;
+
+// 페이지네이션 렌더링 함수
+window.renderWeakSignalPage = function(page) {
+    const tbody = document.getElementById('weak-signal-list');
+    const paginationContainer = document.getElementById('weak-signal-pagination');
+    if (!tbody || !window.weakSignalData) return;
+
+    const data = window.weakSignalData;
+    const totalPages = Math.ceil(data.length / WEAK_SIGNAL_PER_PAGE);
+    
+    // 페이지 범위 보정
+    if (page < 1) page = 1;
+    if (page > totalPages) page = totalPages;
+    window.currentWeakSignalPage = page;
+
+    // 현재 페이지 데이터 자르기
+    const startIndex = (page - 1) * WEAK_SIGNAL_PER_PAGE;
+    const endIndex = startIndex + WEAK_SIGNAL_PER_PAGE;
+    const pageData = data.slice(startIndex, endIndex);
+
+    if (pageData.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="10" style="padding: 30px; color: var(--text-muted);">데이터가 없습니다.</td></tr>`;
+        if (paginationContainer) paginationContainer.innerHTML = '';
+        return;
+    }
+
+    let html = '';
+    pageData.forEach((row, idx) => {
+        const actualIndex = startIndex + idx;
+        
+        // 시그널 등급 뱃지 색상
+        let badgeStyle = 'background: #374151; color: #d1d5db;'; // IGNORE (Gray)
+        if (row.signal_level === 'VERY HIGH') badgeStyle = 'background: #ef4444; color: white; box-shadow: 0 0 10px rgba(239, 68, 68, 0.5);';
+        else if (row.signal_level === 'HIGH') badgeStyle = 'background: #f97316; color: white;';
+        else if (row.signal_level === 'MEDIUM') badgeStyle = 'background: #10b981; color: white;';
+        else if (row.signal_level === 'LOW') badgeStyle = 'background: #6b7280; color: white;';
+
+        html += `
+            <tr onclick="window.fetchSingleKeywordForecast('${row.keyword}')" style="border-bottom: 1px solid var(--border-light); transition: background-color 0.2s; cursor: pointer;" onmouseover="this.style.backgroundColor='rgba(139, 92, 246, 0.1)'" onmouseout="this.style.backgroundColor='transparent'">
+                <td style="padding: 12px; font-weight: 700; color: var(--text-main);">${actualIndex + 1}</td>
+                <td style="padding: 12px; text-align: left; font-weight: 700;">${row.keyword}</td>
+                <td style="padding: 12px; font-weight: 800; font-size: 1.1rem; color: #8b5cf6;">${row.trend_score}</td>
+                <td style="padding: 12px;">
+                    <span style="display: inline-block; padding: 4px 10px; border-radius: 20px; font-size: 0.75rem; font-weight: 700; ${badgeStyle}">
+                        ${row.signal_level}
+                    </span>
+                </td>
+                <td style="padding: 12px; color: var(--text-muted);">${row.burst_ratio}배<br><span style="font-size:0.7rem; color: #8b5cf6;">(${row.burst_score}점)</span></td>
+                <td style="padding: 12px; color: var(--text-muted);">${row.persistence_score}</td>
+                <td style="padding: 12px; color: var(--text-muted);">${row.acceleration_score}</td>
+                <td style="padding: 12px; color: var(--text-muted);">${row.stability_score}</td>
+                <td style="padding: 12px; color: var(--text-muted);">${row.volume_score}</td>
+                <td style="padding: 12px; font-weight: 600;">${row.growth_rate > 0 ? '+' : ''}${Math.round(row.growth_rate * 100)}%</td>
+            </tr>
+        `;
+    });
+    tbody.innerHTML = html;
+
+    // 페이지네이션 버튼 생성
+    if (paginationContainer && totalPages > 1) {
+        let paginationHtml = `<div style="display: flex; justify-content: center; gap: 8px; margin-top: 16px;">`;
+        
+        // 이전 버튼
+        if (page > 1) {
+            paginationHtml += `<button class="btn-secondary btn-sm" onclick="window.renderWeakSignalPage(${page - 1})"><i class="fa-solid fa-chevron-left"></i></button>`;
+        }
+
+        // 페이지 번호 버튼 (최대 10개 표시 등 로직 추가 가능하나 전체 출력)
+        let startPage = Math.max(1, page - 4);
+        let endPage = Math.min(totalPages, startPage + 9);
+        if (endPage - startPage < 9) {
+            startPage = Math.max(1, endPage - 9);
+        }
+
+        for (let i = startPage; i <= endPage; i++) {
+            if (i === page) {
+                paginationHtml += `<button class="btn-primary btn-sm" style="background: #8b5cf6; border: none;">${i}</button>`;
+            } else {
+                paginationHtml += `<button class="btn-secondary btn-sm" onclick="window.renderWeakSignalPage(${i})">${i}</button>`;
+            }
+        }
+
+        // 다음 버튼
+        if (page < totalPages) {
+            paginationHtml += `<button class="btn-secondary btn-sm" onclick="window.renderWeakSignalPage(${page + 1})"><i class="fa-solid fa-chevron-right"></i></button>`;
+        }
+        
+        paginationHtml += `</div>`;
+        paginationContainer.innerHTML = paginationHtml;
+    } else if (paginationContainer) {
+        paginationContainer.innerHTML = '';
     }
 };
 
@@ -524,7 +599,8 @@ window.fetchSingleKeywordForecast = async function(keyword) {
             window.trendChartHelper.renderChart([{
                 title: predictResult.keyword,
                 keywords: [predictResult.keyword],
-                data: predictResult.data
+                data: predictResult.data,
+                signals: predictResult.signals || []
             }], false);
         } else {
             alert(`예측 실패: ${predictResult.detail || predictResult.error || '알 수 없는 오류'}`);
@@ -558,6 +634,12 @@ window.fetchSingleKeywordForecast = async function(keyword) {
                 <li><strong>최고점 예상:</strong> <span class="highlight">${predictResult.summary.maxDate}</span> (약 ${predictResult.summary.maxRatio}건)</li>
                 <li><strong>모델 오차율 (MAPE):</strong> <span class="highlight" style="color:#ef4444">${evaluateResult.summary.mape}%</span> (정확도 <span style="color:#10b981;font-weight:bold;">${evaluateResult.summary.accuracy}%</span>)</li>
             `;
+            if (Array.isArray(predictResult.signals) && predictResult.signals.length > 0) {
+                const firstSignal = predictResult.signals[0];
+                insightsHtml += `
+                    <li><strong>조기 경보:</strong> <span class="highlight">${firstSignal.date}</span>에 ${firstSignal.label} (점수 ${firstSignal.score}, 당시 약 ${Math.round(firstSignal.volume).toLocaleString()}건)</li>
+                `;
+            }
             document.getElementById('report-insights').innerHTML = insightsHtml;
         }
 

@@ -5,9 +5,29 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from typing import List, Dict, Any, Optional
+from datetime import datetime, timedelta
 from naver_api import fetch_naver_trend
 from forecaster import forecast_trend, evaluate_trend_accuracy
 from naver_ad_api import fetch_search_ad_volume
+
+def _get_scale_multiplier(data_list: list, monthly_volume: float, days_queried: int, time_unit: str = "date") -> float:
+    """네이버 비율값(0~100)을 실제 검색 건수로 환산하기 위한 배수를 계산합니다."""
+    if monthly_volume <= 0 or not data_list:
+        return 1.0
+    if time_unit == 'week':
+        days_queried *= 7
+    elif time_unit == 'month':
+        days_queried *= 30
+    total_ratio = sum(item["ratio"] for item in data_list)
+    estimated_monthly = (total_ratio / max(1, days_queried)) * 30
+    return monthly_volume / estimated_monthly if estimated_monthly > 0 else 1.0
+
+def _apply_scaling(items: list, multiplier: float, keys=("ratio", "yhat_lower", "yhat_upper")):
+    """데이터 리스트의 지정된 키들에 배수를 곱합니다."""
+    for item in items:
+        for key in keys:
+            if key in item:
+                item[key] = round(item[key] * multiplier, 0)
 
 # 가속도 랭킹 모듈 임포트 (언제든 뗄 수 있는 독립 구조)
 try:
@@ -20,6 +40,11 @@ try:
     from pipeline.services.trend_detector import detect_weak_signals
 except ImportError:
     detect_weak_signals = None
+
+try:
+    from pipeline.services.early_signal_detector import detect_early_signals
+except ImportError:
+    detect_early_signals = None
 
 app = FastAPI(title="네이버 데이터랩 트렌드 예측 API", description="네이버 검색어 트렌드를 수집하고 시계열 예측을 제공하는 서비스")
 
@@ -55,6 +80,14 @@ class PredictRequest(BaseModel):
     gender: Optional[str] = Field(None, description="성별 구분 (f/m, 생략 시 전체)")
     ages: Optional[List[str]] = Field(None, description="연령대 목록 (생략 시 전체)")
     forecastSteps: int = Field(30, description="예측할 기간의 수 (일/주/월 단위)")
+
+class PredictKeywordRequest(BaseModel):
+    keyword: str = Field(..., description="조회할 단일 키워드")
+    forecastSteps: int = Field(30, description="예측할 기간(일)의 수")
+
+class EvaluateRequest(BaseModel):
+    keyword: str = Field(..., description="백테스트할 단일 키워드")
+    testDays: int = Field(15, description="테스트 구간 일수 (기본: 15일)")
 
 @app.post("/api/predict")
 async def predict_trend(payload: PredictRequest):
@@ -108,37 +141,17 @@ async def predict_trend(payload: PredictRequest):
             )
 
             # --- 스케일링 로직 추가 (비율 0~100 -> 실제 검색량(건)) ---
-            if group_monthly_volume > 0 and len(historical) > 0:
-                # 과거 데이터 전체 합계를 바탕으로 30일(월간) 기준 비율 총합 추정
-                total_historical_ratio = sum(item["ratio"] for item in historical)
-                days_queried = len(historical)
+            multiplier = _get_scale_multiplier(historical, group_monthly_volume, len(historical), payload.timeUnit)
+            if multiplier != 1.0:
+                _apply_scaling(historical, multiplier)
+                _apply_scaling(forecasted, multiplier)
                 
-                # 분석 단위에 따른 일수 환산
-                if payload.timeUnit == 'week':
-                    days_queried *= 7
-                elif payload.timeUnit == 'month':
-                    days_queried *= 30
-                    
-                if days_queried == 0:
-                    days_queried = 1
-                
-                # 30일(한 달) 동안의 예상 비율 합계
-                estimated_monthly_ratio_sum = (total_historical_ratio / days_queried) * 30
-                
-                if estimated_monthly_ratio_sum > 0:
-                    # 환산 배수 계산
-                    multiplier = group_monthly_volume / estimated_monthly_ratio_sum
-                    
-                    # 과거 및 예측 데이터 스케일링
-                    for item in historical:
-                        item["ratio"] = round(item["ratio"] * multiplier, 0) # 건수이므로 정수화
-                    for item in forecasted:
-                        item["ratio"] = round(item["ratio"] * multiplier, 0)
-                        
-                    # summary 수치 업데이트
-                    summary["lastHistoricalValue"] = round(summary["lastHistoricalValue"] * multiplier, 0)
-                    summary["lastForecastValue"] = round(summary["lastForecastValue"] * multiplier, 0)
-                    summary["maxRatio"] = round(summary["maxRatio"] * multiplier, 0)
+                # summary 수치 업데이트
+                summary["lastHistoricalValue"] = round(summary["lastHistoricalValue"] * multiplier, 0)
+                summary["lastForecastValue"] = round(summary["lastForecastValue"] * multiplier, 0)
+                summary["maxRatio"] = round(summary["maxRatio"] * multiplier, 0)
+
+            signals = detect_early_signals(historical) if detect_early_signals else []
 
             # 과거 + 예측 데이터 병합
             combined_data = historical + forecasted
@@ -147,6 +160,7 @@ async def predict_trend(payload: PredictRequest):
                 "title": title,
                 "keywords": keywords,
                 "data": combined_data,
+                "signals": signals,
                 "summary": summary
             })
 
@@ -166,9 +180,11 @@ async def predict_trend(payload: PredictRequest):
 @app.get("/api/velocity-ranking")
 async def get_velocity_ranking_api(start_date: Optional[str] = None, end_date: Optional[str] = None, use_live: bool = True):
     """
-    백그라운드 스케줄러가 미리 수집해둔 식품 전체(Top 500) 가속도 랭킹 캐시를 반환합니다.
+    날짜를 지정하면 해당 기간 기준으로 재계산하고, 날짜가 없으면 최신 캐시를 반환합니다.
     """
-    if use_live:
+    has_custom_range = bool(start_date and end_date)
+
+    if use_live and not has_custom_range:
         from pipeline.scheduler import VELOCITY_CACHE, LOCK_FILE
         import json
         
@@ -179,14 +195,14 @@ async def get_velocity_ranking_api(start_date: Optional[str] = None, end_date: O
             return {"message": "현재 500개의 식품 트렌드 데이터를 수집 및 분석 중입니다. 약 2~3분 후 새로고침 해주세요.", "data": []}
         else:
             return {"error": "캐시된 데이터가 없습니다. 서버 백그라운드 수집을 기다려주세요.", "data": []}
-    else:
-        if get_velocity_ranking is None:
-            raise HTTPException(status_code=500, detail="가속도 랭킹 모듈을 찾을 수 없습니다.")
-            
-        result = get_velocity_ranking(start_date, end_date)
-        if "error" in result:
-            raise HTTPException(status_code=404, detail=result["error"])
-        return result
+
+    if get_velocity_ranking is None:
+        raise HTTPException(status_code=500, detail="가속도 랭킹 모듈을 찾을 수 없습니다.")
+        
+    result = get_velocity_ranking(start_date, end_date)
+    if "error" in result:
+        raise HTTPException(status_code=404, detail=result["error"])
+    return result
 # ===============================
 
 # === [Weak Signal 감지 API 연동부] ===
@@ -263,32 +279,23 @@ async def predict_single_keyword(payload: PredictKeywordRequest):
         )
 
         # 스케일링 로직
-        if group_monthly_volume > 0 and len(historical) > 0:
-            total_historical_ratio = sum(item["ratio"] for item in historical)
-            days_queried = len(historical)
-            estimated_monthly_ratio_sum = (total_historical_ratio / max(1, days_queried)) * 30
+        multiplier = _get_scale_multiplier(historical, group_monthly_volume, len(historical))
+        if multiplier != 1.0:
+            _apply_scaling(historical, multiplier)
+            _apply_scaling(forecasted, multiplier)
             
-            if estimated_monthly_ratio_sum > 0:
-                multiplier = group_monthly_volume / estimated_monthly_ratio_sum
-                
-                for item in historical:
-                    item["ratio"] = round(item["ratio"] * multiplier, 0)
-                for item in forecasted:
-                    item["ratio"] = round(item["ratio"] * multiplier, 0)
-                    if "yhat_lower" in item:
-                        item["yhat_lower"] = round(item["yhat_lower"] * multiplier, 0)
-                    if "yhat_upper" in item:
-                        item["yhat_upper"] = round(item["yhat_upper"] * multiplier, 0)
-                    
-                summary["lastHistoricalValue"] = round(summary["lastHistoricalValue"] * multiplier, 0)
-                summary["lastForecastValue"] = round(summary["lastForecastValue"] * multiplier, 0)
-                summary["maxRatio"] = round(summary["maxRatio"] * multiplier, 0)
+            summary["lastHistoricalValue"] = round(summary["lastHistoricalValue"] * multiplier, 0)
+            summary["lastForecastValue"] = round(summary["lastForecastValue"] * multiplier, 0)
+            summary["maxRatio"] = round(summary["maxRatio"] * multiplier, 0)
+
+        signals = detect_early_signals(historical) if detect_early_signals else []
 
         combined_data = historical + forecasted
 
         return {
             "keyword": payload.keyword,
             "data": combined_data,
+            "signals": signals,
             "summary": summary
         }
 
@@ -334,20 +341,9 @@ async def evaluate_single_keyword(payload: PredictKeywordRequest):
         )
 
         # 스케일링 로직
-        if group_monthly_volume > 0 and len(historical) > 0:
-            total_historical_ratio = sum(item["ratio"] for item in historical)
-            days_queried = len(historical)
-            estimated_monthly_ratio_sum = (total_historical_ratio / max(1, days_queried)) * 30
-            
-            if estimated_monthly_ratio_sum > 0:
-                multiplier = group_monthly_volume / estimated_monthly_ratio_sum
-                
-                for item in evaluated_data:
-                    item["ratio"] = round(item["ratio"] * multiplier, 0)
-                    if "yhat_lower" in item:
-                        item["yhat_lower"] = round(item["yhat_lower"] * multiplier, 0)
-                    if "yhat_upper" in item:
-                        item["yhat_upper"] = round(item["yhat_upper"] * multiplier, 0)
+        multiplier = _get_scale_multiplier(historical, group_monthly_volume, len(historical))
+        if multiplier != 1.0:
+            _apply_scaling(evaluated_data, multiplier)
 
         return {
             "keyword": payload.keyword,

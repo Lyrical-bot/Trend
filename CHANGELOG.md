@@ -1,0 +1,161 @@
+# 📋 CHANGELOG — 프로젝트 업데이트 이력
+
+> 이 문서는 초창기 `AGENT_INSTRUCTIONS.md` 작성 이후 진행된 모든 주요 변경 사항을 기록합니다.
+> 프로젝트의 **현재 상태**를 파악하려면 이 문서를 기준으로 삼으세요.
+
+---
+
+## 🏷️ v2.3 — 유행 전조 감지 레이어 추가 (2026-06-25)
+
+### 주요 개선 사항
+1. **조기 경보 감지 모듈 분리 추가**
+   - `pipeline/services/early_signal_detector.py`를 새로 추가하여 Prophet 예측과 독립적인 유행 전조 감지 레이어를 구성
+   - `EarlySignalConfig`에 threshold, cooldown, breakout horizon 등을 모아 언제든 수정/삭제하기 쉽게 분리
+2. **날짜별 Feature 생성 기반 마련**
+   - 각 키워드의 매 날짜를 기준으로 `burstRatio`, `growth7d`, `accelerationScore`, `persistenceScore`, `stabilityScore`, `volumeScore`, `trendScore`를 계산
+   - `build_breakout_training_rows()`를 추가하여 향후 ML 분류 모델 학습용 feature/label 데이터셋을 만들 수 있도록 준비
+3. **조기 경보 Signal API 연결**
+   - `/api/predict`와 `/api/predict-keyword` 응답에 `signals` 필드를 추가
+   - 기존 `data`와 `summary` 구조는 유지하여 차트/예측 로직과 독립적으로 제거 가능
+4. **차트 전조 마커 표시**
+   - `chart-helper.js`에 ApexCharts point annotation을 추가하여 차트 위에 `유행 전조 감지` 마커를 표시
+   - 단일 키워드 리포트에도 최초 감지일, 점수, 당시 검색량을 함께 표시
+5. **검증**
+   - 인공 상승 곡선에서 폭발 전 구간에 조기 경보가 생성되는지 확인
+   - `py_compile`, `node --check`로 Python/JS 문법 검증 완료
+
+---
+
+## 🏷️ v2.2 — 유행 아이템 예측 안정화 및 검증 강화 (2026-06-25)
+
+### 주요 개선 사항
+
+1. **예측 전처리 안정화**
+   - `forecaster.py`에서 학습 데이터에 IQR 기반 이상치 완화를 명확히 적용하도록 정리
+   - 검색량/트렌드 비율 급등락의 영향이 과도하게 커지지 않도록 안전한 IQR Smoothing 중심으로 안정화
+   - 실측 스케일을 유지하여 로그-지수 역변환(`log1p`/`expm1`)으로 예측선이 과도하게 증폭되는 문제를 방지
+2. **Prophet 모델 구성 보강**
+   - 한국 공휴일 효과를 인식할 수 있도록 `add_country_holidays(country_name="KR")` 적용
+   - 기존 `changepoint_prior_scale=0.01`, 조건부 연간 계절성 정책은 유지하여 급격한 과적합을 계속 억제
+3. **백테스트 지표 확장**
+   - 기존 MAPE/정확도 외에 `SMAPE`, `MAE`, 방향성 정확도(`directionAccuracy`)를 추가
+     - *`SMAPE` (대칭 평균 절대 백분율 오차)*: 검색량이 적을 때 오차율이 과도하게 뻥튀기되는 기존 MAPE의 단점을 보완한 지표입니다.
+     - *`MAE` (평균 절대 오차)*: 퍼센트(%)가 아닌 "실제 검색량 수치(건수)"가 평균적으로 얼마나 차이 났는지 보여주는 직관적인 지표입니다.
+     - *방향성 정확도 (`directionAccuracy`)*: 검색량이 내일 오를지 내릴지, 그 '추세의 방향'을 맞춘 확률(%)을 의미합니다.
+   - 낮은 검색량 키워드에서 MAPE만 과도하게 흔들리는 문제를 보완
+4. **Rolling Backtest 추가**
+   - 최근 15일 단일 holdout 평가에 더해 최대 3개 구간 rolling backtest 요약을 제공
+   - 한 구간의 일시적 이벤트로 모델 평가가 크게 왜곡되는 문제를 줄임
+5. **예측 운영 기준 명시**
+   - summary에 `recommendedHorizon: "7~14일 방향성 중심"`을 추가하여 30일 절대값보다 단기 방향성 판단을 우선하도록 안내
+6. **의존성 문서화**
+   - `requirements.txt`에 `prophet`, `cmdstanpy`를 추가하여 새 환경 설치 시 누락되지 않도록 보강
+7. **가속도 랭킹 기간 조회 버그 수정**
+   - `/api/velocity-ranking`이 날짜 파라미터를 받아도 최신 캐시만 반환하던 문제를 수정
+   - 날짜 범위가 지정된 요청은 캐시를 우회하고 `historical_fb_data.csv` 기준으로 기간별 가속도 랭킹을 재계산
+   - 프론트엔드 조회 요청에 `use_live=false`를 명시하여 기간 조회 의도를 분명히 함
+
+---
+
+## 🏷️ v2.1 — 예측 신뢰도 및 코드 구조 개선 (2026-06-25)
+
+### 주요 개선 사항
+
+1. **이상치 스무딩 (Outlier Smoothing)**
+   - `forecaster.py`에 IQR 기반 클램핑 함수를 추가하여 TV 방송, 이슈 등으로 하루 반짝 폭등한 데이터가 예측선을 비정상적으로 왜곡하는 현상 방지
+2. **Prophet 하이퍼파라미터 튜닝**
+   - `changepoint_prior_scale`을 `0.05` → `0.01`로 둔화시켜 자잘한 등락에 과민 반응하지 않도록 안정화
+   - `seasonality_prior_scale`을 `10.0` → `5.0`으로 조정
+3. **연간 계절성 조건부 활성화**
+   - 1년 미만(700일 이하) 데이터에서 `yearly_seasonality=True` 사용 시 발생하는 과적합을 막기 위해, 데이터 기간에 따라 자동으로 활성화되도록 로직 개선
+4. **신뢰구간 차트 시각화**
+   - `chart-helper.js`를 수정하여 ApexCharts의 `rangeArea` 시리즈를 통해 API가 내려주는 `yhat_lower`, `yhat_upper` 값을 투명한 범위로 시각화
+5. **코드 중복 제거 (리팩터링)**
+   - `main.py` 내 3곳에 흩어져 있던 스케일링 로직을 `_get_scale_multiplier` 유틸 함수로 추출하여 통합 관리
+
+---
+
+## 🏷️ v2.0 — Prophet 시계열 예측 엔진 전환 (2026-06-25)
+
+### 핵심 변경: 예측 모델 교체
+
+| 항목             | Before (v1.0)                                   | After (v2.0)                                            |
+| ---------------- | ----------------------------------------------- | ------------------------------------------------------- |
+| 예측 모델        | `statsmodels` Holt-Winters + 다항 회귀 Fallback | **Facebook Prophet** (`prophet` + `cmdstanpy`)          |
+| 데이터 수집 범위 | 수동 입력 기간 (프론트엔드에서 지정)            | **과거 1년(365일)** 자동 수집                           |
+| 계절성 학습      | 없음                                            | `weekly_seasonality=True`, `yearly_seasonality=True`    |
+| 백테스팅 기능    | 없음                                            | Train/Test Split(350일/15일) 기반 MAPE 정확도 검증 추가 |
+
+### 새로 추가된 API 엔드포인트
+
+| 엔드포인트              | 메서드 | 설명                                                                |
+| ----------------------- | ------ | ------------------------------------------------------------------- |
+| `/api/predict-keyword`  | POST   | 단일 키워드에 대해 과거 1년 데이터 수집 → Prophet 미래 30일 예측    |
+| `/api/evaluate-keyword` | POST   | 단일 키워드에 대해 Train/Test 분할 백테스트 수행 (MAPE 오차율 산출) |
+| `/api/weak-signals`     | GET    | AI Feature Engine 기반 넥스트 히트 상품 130개 랭킹 (캐시)           |
+| `/api/velocity-ranking` | GET    | 가속도(Velocity) 폭발 Top 10 선행 지표 감지기 (캐시)                |
+
+### 새로 추가된 파일
+
+```
+📦 new/
+├── forecaster.py              ← [수정됨] Prophet 기반으로 전면 재작성
+├── naver_ad_api.py            ← [기존] 네이버 검색광고 API (절대 검색량 환산용)
+├── CHANGELOG.md               ← [신규] 이 파일
+├── pipeline/
+│   ├── scheduler.py           ← [기존] 6시간 주기 백그라운드 데이터 수집기
+│   ├── velocity_model.py      ← [기존] 가속도(Velocity) 선행 지표 모델
+│   ├── data_collector.py      ← [기존] CSV 데이터셋 수집기
+│   ├── feature_engine/        ← [기존] Weak Signal AI 피처 엔진
+│   │   ├── burst.py           ← 폭발력 (최근 3일 vs 직전 30일)
+│   │   ├── persistence.py     ← 지속성 (연속 상승일 수)
+│   │   ├── acceleration.py    ← 가속도 (증가폭의 증가)
+│   │   ├── stability.py       ← 안정성 (노이즈 적은 정도)
+│   │   ├── volume.py          ← 절대 규모 (마이너 키워드 필터)
+│   │   ├── growth.py          ← 성장률 (주간 대비 변화율)
+│   │   └── trend_scorer.py    ← 종합 점수 산출 및 등급 분류
+│   ├── services/
+│   │   └── trend_detector.py  ← Weak Signal 감지 오케스트레이터
+│   └── models/
+│       └── trend_result.py    ← 결과 데이터 타입 정의
+├── static/
+│   ├── index.html             ← [수정됨] Dual Chart UI (예측 + 백테스트 동시 표시)
+│   ├── css/style.css          ← [수정됨] 다크 모드, 글래스모피즘 디자인
+│   └── js/
+│       ├── app.js             ← [수정됨] Promise.all 병렬 API 호출, 페이지네이션
+│       └── chart-helper.js    ← [수정됨] 백테스트 3-Line Chart (학습/실제/예측)
+└── datasets/
+    ├── historical_fb_data.csv       ← 스케줄러가 수집한 원본 데이터
+    ├── cached_food_signals.json     ← Weak Signal 캐시
+    └── cached_food_velocity.json    ← Velocity Ranking 캐시
+```
+
+### 프론트엔드 UI 변경사항
+
+- **Dual Chart 레이아웃**: 키워드 클릭 시 상단(미래 예측)과 하단(백테스트 검증) 차트가 동시에 렌더링
+- **페이지네이션**: Weak Signal 표가 20개 단위 페이지로 분리됨 (하단 1, 2, 3... 버튼)
+- **리포트 통합**: 예측 트렌드 요약 + MAPE 정확도 + 모델 오차율이 한 곳에 표시
+
+### 기술 스택 변경 (현재 기준)
+
+| 역할        | 패키지                        |
+| ----------- | ----------------------------- |
+| 백엔드      | Python 3.11, FastAPI, Uvicorn |
+| API 통신    | `httpx` (비동기)              |
+| 예측 모델   | **`prophet`**, `cmdstanpy`    |
+| 데이터 분석 | `pandas`, `numpy`             |
+| 스케줄링    | `apscheduler`                 |
+| 환경 변수   | `python-dotenv`               |
+
+---
+
+## ⚠️ 현재 알려진 한계 및 개선 예정 사항
+
+1. **갑작스러운 트렌드 전환(방송/뉴스 이벤트)은 예측 불가** — 시계열 모델의 태생적 한계
+2. **한국 공휴일 캘린더 미연동** — 명절/연휴 패턴을 모델이 인식하지 못함
+
+---
+
+## 📌 이전 버전 참고
+
+초창기(v1.0) 설계 문서는 [`AGENT_INSTRUCTIONS.md`](./AGENT_INSTRUCTIONS.md)를 참고하세요.
