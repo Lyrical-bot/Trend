@@ -9,9 +9,9 @@ class TrendChartHelper {
 
     /**
      * 네이버 API 가공 데이터를 기반으로 차트를 그립니다.
-     * results: [{ title, keywords, data: [{ period, ratio, isForecast }] }]
+     * results: [{ title, keywords, data: [{ period, ratio, isForecast, type }] }]
      */
-    renderChart(results) {
+    renderChart(results, isBacktest = false) {
         if (this.chart) {
             this.chart.destroy();
         }
@@ -23,58 +23,97 @@ class TrendChartHelper {
         
         let allPeriods = [];
 
-        // 모든 날짜 목록 수집 및 정렬
+        // 모든 날짜 목록 수집 및 정렬 (중복 제거)
         if (results.length > 0) {
-            allPeriods = results[0].data.map(item => item.period);
+            allPeriods = Array.from(new Set(results[0].data.map(item => item.period))).sort();
         }
 
         results.forEach((group, index) => {
             const color = this.colors[index % this.colors.length];
             const fadeColor = this.colorsFade[index % this.colorsFade.length];
 
-            // 1. 과거(실제) 데이터 시리즈
-            const actualData = group.data.map(item => {
-                return item.isForecast ? null : item.ratio;
-            });
+            if (isBacktest) {
+                // 백테스트 모드: train(학습), actual(실제), predicted(예측) 3가지 라인
+                // 1. 학습 데이터 (Train) - 실선
+                const trainData = allPeriods.map(p => {
+                    const item = group.data.find(d => d.period === p && d.type === 'train');
+                    return item ? item.ratio : null;
+                });
+                
+                // 2. 실제 데이터 (Actual Test) - 실선, 좀 더 진한/다른 색
+                let lastTrainVal = null;
+                const actualData = allPeriods.map(p => {
+                    const item = group.data.find(d => d.period === p && d.type === 'actual');
+                    if (item) return item.ratio;
+                    
+                    // 연결을 위해 train의 마지막 값 가져오기
+                    const tItem = group.data.find(d => d.period === p && d.type === 'train');
+                    if (tItem) lastTrainVal = tItem.ratio;
+                    
+                    // Train의 가장 마지막 요소와 Actual의 첫 요소를 시각적으로 잇기 위한 트릭
+                    const isNextActual = group.data.find(d => d.period === allPeriods[allPeriods.indexOf(p)+1] && d.type === 'actual');
+                    if (tItem && isNextActual) return tItem.ratio;
+                    
+                    return null;
+                });
 
-            // 2. 예측 데이터 시리즈
-            // 자연스러운 연결을 위해 과거 마지막 데이터 포인트를 예측 데이터의 첫 부분에 결합시킵니다.
-            let lastActualIdx = -1;
-            for (let i = group.data.length - 1; i >= 0; i--) {
-                if (!group.data[i].isForecast) {
-                    lastActualIdx = i;
-                    break;
-                }
+                // 3. 예측 데이터 (Predicted Test) - 점선
+                const predictedData = allPeriods.map(p => {
+                    const item = group.data.find(d => d.period === p && d.type === 'predicted');
+                    if (item) return item.ratio;
+                    
+                    // 연결을 위해 train의 마지막 값 가져오기
+                    const tItem = group.data.find(d => d.period === p && d.type === 'train');
+                    const isNextPred = group.data.find(d => d.period === allPeriods[allPeriods.indexOf(p)+1] && d.type === 'predicted');
+                    if (tItem && isNextPred) return tItem.ratio;
+                    
+                    return null;
+                });
+
+                series.push({ name: `${group.title} (과거 학습)`, data: trainData });
+                strokeDashArray.push(0);
+                strokeColors.push(color);
+                fillColors.push(color);
+
+                series.push({ name: `${group.title} (숨겨둔 실제 데이터)`, data: actualData });
+                strokeDashArray.push(0);
+                strokeColors.push('#3b82f6'); // 파란색 실선으로 실제 데이터 강조
+                fillColors.push('#3b82f6');
+
+                series.push({ name: `${group.title} (AI 예측)`, data: predictedData });
+                strokeDashArray.push(5);
+                strokeColors.push(color);
+                fillColors.push(fadeColor);
+
+            } else {
+                // 일반 모드 (과거 vs 미래)
+                const actualData = allPeriods.map(p => {
+                    const item = group.data.find(d => d.period === p && !d.isForecast);
+                    return item ? item.ratio : null;
+                });
+
+                const forecastData = allPeriods.map((p, idx) => {
+                    const item = group.data.find(d => d.period === p && d.isForecast);
+                    if (item) return item.ratio;
+                    
+                    // 연결을 위해 과거 마지막 값 가져오기
+                    const aItem = group.data.find(d => d.period === p && !d.isForecast);
+                    const isNextFore = group.data.find(d => d.period === allPeriods[idx+1] && d.isForecast);
+                    if (aItem && isNextFore) return aItem.ratio;
+                    
+                    return null;
+                });
+
+                series.push({ name: `${group.title} (과거)`, data: actualData });
+                strokeDashArray.push(0);
+                strokeColors.push(color);
+                fillColors.push(color);
+
+                series.push({ name: `${group.title} (예측)`, data: forecastData });
+                strokeDashArray.push(5);
+                strokeColors.push(color);
+                fillColors.push(fadeColor);
             }
-
-            const forecastData = group.data.map((item, idx) => {
-                if (item.isForecast) {
-                    return item.ratio;
-                }
-                // 예측의 시작점을 과거 마지막 데이터로 연결
-                if (idx === lastActualIdx) {
-                    return item.ratio;
-                }
-                return null;
-            });
-
-            // 과거 시리즈 추가 (실선)
-            series.push({
-                name: `${group.title} (과거)`,
-                data: actualData
-            });
-            strokeDashArray.push(0); // 0 = 실선
-            strokeColors.push(color);
-            fillColors.push(color);
-
-            // 예측 시리즈 추가 (점선)
-            series.push({
-                name: `${group.title} (예측)`,
-                data: forecastData
-            });
-            strokeDashArray.push(5); // 5 = 점선 크기
-            strokeColors.push(color);
-            fillColors.push(fadeColor);
         });
 
         const options = {

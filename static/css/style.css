@@ -575,8 +575,8 @@ body {
 }
 
 .legend-color.fore {
-    background: var(--text-muted);
-    border-top: 2px dashed rgba(0,0,0,0.3);
+    background: transparent;
+    border-top: 3px dashed var(--brand-mint);
 }
 
 /* Chart Overlays */

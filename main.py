@@ -6,7 +6,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from typing import List, Dict, Any, Optional
 from naver_api import fetch_naver_trend
-from forecaster import forecast_trend
+from forecaster import forecast_trend, evaluate_trend_accuracy
 from naver_ad_api import fetch_search_ad_volume
 
 # 가속도 랭킹 모듈 임포트 (언제든 뗄 수 있는 독립 구조)
@@ -215,6 +215,148 @@ async def get_weak_signals_api(target_date: Optional[str] = None, use_live: bool
             return {"data": results}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"엔진 분석 오류: {str(e)}")
+# ===============================
+
+# === [Prophet 단일 키워드 예측 API 연동부] ===
+class PredictKeywordRequest(BaseModel):
+    keyword: str = Field(..., description="조회할 단일 키워드")
+    forecastSteps: int = Field(30, description="예측할 기간(일)의 수")
+
+@app.post("/api/predict-keyword")
+async def predict_single_keyword(payload: PredictKeywordRequest):
+    try:
+        from datetime import datetime, timedelta
+        
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=365)
+        start_date_str = start_date.strftime("%Y-%m-%d")
+        end_date_str = end_date.strftime("%Y-%m-%d")
+        
+        ad_volumes = await fetch_search_ad_volume([payload.keyword])
+        group_monthly_volume = ad_volumes.get(payload.keyword, 0.0)
+
+        naver_response = await fetch_naver_trend(
+            start_date=start_date_str,
+            end_date=end_date_str,
+            time_unit="date",
+            keyword_groups=[{"groupName": payload.keyword, "keywords": [payload.keyword]}]
+        )
+
+        results = naver_response.get("results", [])
+        if not results:
+            return {"error": "데이터를 찾을 수 없습니다."}
+            
+        data = results[0].get("data", [])
+        
+        historical = []
+        for item in data:
+            historical.append({
+                "period": item["period"],
+                "ratio": item["ratio"],
+                "isForecast": False
+            })
+
+        forecasted, summary = forecast_trend(
+            historical_data=historical,
+            time_unit="date",
+            forecast_steps=payload.forecastSteps
+        )
+
+        # 스케일링 로직
+        if group_monthly_volume > 0 and len(historical) > 0:
+            total_historical_ratio = sum(item["ratio"] for item in historical)
+            days_queried = len(historical)
+            estimated_monthly_ratio_sum = (total_historical_ratio / max(1, days_queried)) * 30
+            
+            if estimated_monthly_ratio_sum > 0:
+                multiplier = group_monthly_volume / estimated_monthly_ratio_sum
+                
+                for item in historical:
+                    item["ratio"] = round(item["ratio"] * multiplier, 0)
+                for item in forecasted:
+                    item["ratio"] = round(item["ratio"] * multiplier, 0)
+                    if "yhat_lower" in item:
+                        item["yhat_lower"] = round(item["yhat_lower"] * multiplier, 0)
+                    if "yhat_upper" in item:
+                        item["yhat_upper"] = round(item["yhat_upper"] * multiplier, 0)
+                    
+                summary["lastHistoricalValue"] = round(summary["lastHistoricalValue"] * multiplier, 0)
+                summary["lastForecastValue"] = round(summary["lastForecastValue"] * multiplier, 0)
+                summary["maxRatio"] = round(summary["maxRatio"] * multiplier, 0)
+
+        combined_data = historical + forecasted
+
+        return {
+            "keyword": payload.keyword,
+            "data": combined_data,
+            "summary": summary
+        }
+
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+@app.post("/api/evaluate-keyword")
+async def evaluate_single_keyword(payload: PredictKeywordRequest):
+    try:
+        from datetime import datetime, timedelta
+        
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=365)
+        start_date_str = start_date.strftime("%Y-%m-%d")
+        end_date_str = end_date.strftime("%Y-%m-%d")
+        
+        ad_volumes = await fetch_search_ad_volume([payload.keyword])
+        group_monthly_volume = ad_volumes.get(payload.keyword, 0.0)
+
+        naver_response = await fetch_naver_trend(
+            start_date=start_date_str,
+            end_date=end_date_str,
+            time_unit="date",
+            keyword_groups=[{"groupName": payload.keyword, "keywords": [payload.keyword]}]
+        )
+
+        results = naver_response.get("results", [])
+        if not results:
+            return {"error": "데이터를 찾을 수 없습니다."}
+            
+        data = results[0].get("data", [])
+        
+        historical = []
+        for item in data:
+            historical.append({
+                "period": item["period"],
+                "ratio": item["ratio"]
+            })
+
+        evaluated_data, summary = evaluate_trend_accuracy(
+            historical_data=historical,
+            test_days=15
+        )
+
+        # 스케일링 로직
+        if group_monthly_volume > 0 and len(historical) > 0:
+            total_historical_ratio = sum(item["ratio"] for item in historical)
+            days_queried = len(historical)
+            estimated_monthly_ratio_sum = (total_historical_ratio / max(1, days_queried)) * 30
+            
+            if estimated_monthly_ratio_sum > 0:
+                multiplier = group_monthly_volume / estimated_monthly_ratio_sum
+                
+                for item in evaluated_data:
+                    item["ratio"] = round(item["ratio"] * multiplier, 0)
+                    if "yhat_lower" in item:
+                        item["yhat_lower"] = round(item["yhat_lower"] * multiplier, 0)
+                    if "yhat_upper" in item:
+                        item["yhat_upper"] = round(item["yhat_upper"] * multiplier, 0)
+
+        return {
+            "keyword": payload.keyword,
+            "data": evaluated_data,
+            "summary": summary
+        }
+
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
 # ===============================
 
 # 프론트엔드 정적 파일 서빙을 위한 설정

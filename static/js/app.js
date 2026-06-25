@@ -26,9 +26,17 @@ document.addEventListener('DOMContentLoaded', () => {
     const reportSection = document.getElementById('report-section');
     const reportModelDesc = document.getElementById('report-model-desc');
     const reportInsights = document.getElementById('report-insights');
+    const analyzeBtn = document.getElementById('analyze-btn');
+    if (analyzeBtn) {
+        analyzeBtn.addEventListener('click', handleAnalyze);
+    }
 
-    // Chart Helper 인스턴스 생성
-    const chartHelper = new TrendChartHelper('trend-chart');
+    // Chart Helper 인스턴스 생성 (상단: 예측, 하단: 백테스트)
+    window.trendChartHelper = new TrendChartHelper('trend-chart');
+    window.backtestChartHelper = new TrendChartHelper('backtest-chart');
+
+    // 페이지 로드 시 랭킹 및 Weak Signal 자동 로드
+    fetchVelocityRanking();
 
     // 2. 초기 기본값 설정 (조회 기간: 과거 1년 ~ 오늘)
     const today = new Date();
@@ -367,7 +375,7 @@ window.fetchVelocityRanking = async function() {
             }
 
             html += `
-                <tr style="border-bottom: 1px solid var(--border-light); transition: background-color 0.2s;">
+                <tr onclick="window.fetchSingleKeywordForecast('${row.keyword}')" style="border-bottom: 1px solid var(--border-light); transition: background-color 0.2s; cursor: pointer;" onmouseover="this.style.backgroundColor='rgba(139, 92, 246, 0.1)'" onmouseout="this.style.backgroundColor='transparent'">
                     <td style="padding: 12px; font-weight: 700; color: var(--text-main);">${index + 1}</td>
                     <td style="padding: 12px; text-align: left; font-weight: 500;">${row.keyword}</td>
                     <td style="padding: 12px; color: var(--text-muted);">${row.avg_prev_7.toLocaleString()}건</td>
@@ -429,7 +437,7 @@ window.fetchWeakSignals = async function() {
             else if (row.signal_level === 'LOW') badgeStyle = 'background: #6b7280; color: white;'; // Light Gray
 
             html += `
-                <tr style="border-bottom: 1px solid var(--border-light); transition: background-color 0.2s;">
+                <tr onclick="window.fetchSingleKeywordForecast('${row.keyword}')" style="border-bottom: 1px solid var(--border-light); transition: background-color 0.2s; cursor: pointer;" onmouseover="this.style.backgroundColor='rgba(139, 92, 246, 0.1)'" onmouseout="this.style.backgroundColor='transparent'">
                     <td style="padding: 12px; font-weight: 700; color: var(--text-main);">${index + 1}</td>
                     <td style="padding: 12px; text-align: left; font-weight: 700;">${row.keyword}</td>
                     <td style="padding: 12px; font-weight: 800; font-size: 1.1rem; color: #8b5cf6;">${row.trend_score}</td>
@@ -451,5 +459,117 @@ window.fetchWeakSignals = async function() {
 
     } catch (error) {
         tbody.innerHTML = `<tr><td colspan="10" style="padding: 30px; color: var(--text-muted);">서버와 연결할 수 없습니다.</td></tr>`;
+    }
+};
+
+// Prophet 단일 키워드 예측 호출 및 백테스트 동시 실행
+window.fetchSingleKeywordForecast = async function(keyword) {
+    const chartContainer = document.querySelector('.chart-container');
+    if (chartContainer) {
+        chartContainer.scrollIntoView({ behavior: 'smooth' });
+    }
+
+    // 상단 예측 차트 DOM
+    const placeholder = document.getElementById('chart-placeholder');
+    const loading = document.getElementById('chart-loading');
+    const loadingMsg = document.getElementById('loading-msg');
+    const chartDiv = document.getElementById('trend-chart');
+    
+    // 하단 백테스트 차트 DOM
+    const btPlaceholder = document.getElementById('backtest-placeholder');
+    const btLoading = document.getElementById('backtest-loading');
+    const btLoadingMsg = document.getElementById('backtest-loading-msg');
+    const btChartDiv = document.getElementById('backtest-chart');
+
+    const reportSection = document.getElementById('report-section');
+
+    // 상태 초기화
+    if (placeholder) placeholder.style.display = 'none';
+    if (chartDiv) chartDiv.style.opacity = '0.3';
+    if (loading) {
+        loading.style.display = 'flex';
+        if (loadingMsg) loadingMsg.innerHTML = `<strong>${keyword}</strong> 과거 1년 데이터 수집 및 미래 30일 예측 수행 중...`;
+    }
+
+    if (btPlaceholder) btPlaceholder.style.display = 'none';
+    if (btChartDiv) btChartDiv.style.opacity = '0.3';
+    if (btLoading) {
+        btLoading.style.display = 'flex';
+        if (btLoadingMsg) btLoadingMsg.innerHTML = `<strong>${keyword}</strong> 1년치 과거 데이터 분할 백테스트 수행 중...`;
+    }
+
+    try {
+        // 두 개의 API 병렬 호출
+        const [predictResponse, evaluateResponse] = await Promise.all([
+            fetch('/api/predict-keyword', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ keyword: keyword, forecastSteps: 30 })
+            }),
+            fetch('/api/evaluate-keyword', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ keyword: keyword })
+            })
+        ]);
+
+        const predictResult = await predictResponse.json();
+        const evaluateResult = await evaluateResponse.json();
+
+        // 1. 예측 차트 렌더링
+        if (loading) loading.style.display = 'none';
+        if (chartDiv) chartDiv.style.opacity = '1';
+
+        if (predictResponse.ok && window.trendChartHelper) {
+            window.trendChartHelper.renderChart([{
+                title: predictResult.keyword,
+                keywords: [predictResult.keyword],
+                data: predictResult.data
+            }], false);
+        } else {
+            alert(`예측 실패: ${predictResult.detail || predictResult.error || '알 수 없는 오류'}`);
+            if (placeholder) placeholder.style.display = 'flex';
+        }
+
+        // 2. 백테스트 차트 렌더링
+        if (btLoading) btLoading.style.display = 'none';
+        if (btChartDiv) btChartDiv.style.opacity = '1';
+
+        if (evaluateResponse.ok && window.backtestChartHelper) {
+            window.backtestChartHelper.renderChart([{
+                title: evaluateResult.keyword,
+                keywords: [evaluateResult.keyword],
+                data: evaluateResult.data
+            }], true);
+        } else {
+            if (btPlaceholder) btPlaceholder.style.display = 'flex';
+        }
+
+        // 3. 리포트 렌더링
+        if (reportSection && predictResponse.ok && evaluateResponse.ok) {
+            reportSection.style.display = 'block';
+            document.getElementById('report-model-desc').innerHTML = `
+                <strong style="color: #6b52ff;">${predictResult.summary.modelUsed}</strong> 알고리즘을 사용해 미래를 시뮬레이션하고 정확도를 함께 검증했습니다.<br>
+                과거 ${evaluateResult.summary.trainDays}일 데이터로 패턴을 파악한 뒤 숨겨진 ${evaluateResult.summary.testDays}일 구간을 통해 실력(정확도 ${evaluateResult.summary.accuracy}%)을 측정했습니다.
+            `;
+
+            let insightsHtml = `
+                <li><strong>예상 트렌드:</strong> <span class="highlight">${predictResult.summary.trendStatus}</span></li>
+                <li><strong>최고점 예상:</strong> <span class="highlight">${predictResult.summary.maxDate}</span> (약 ${predictResult.summary.maxRatio}건)</li>
+                <li><strong>모델 오차율 (MAPE):</strong> <span class="highlight" style="color:#ef4444">${evaluateResult.summary.mape}%</span> (정확도 <span style="color:#10b981;font-weight:bold;">${evaluateResult.summary.accuracy}%</span>)</li>
+            `;
+            document.getElementById('report-insights').innerHTML = insightsHtml;
+        }
+
+    } catch (error) {
+        if (loading) loading.style.display = 'none';
+        if (chartDiv) chartDiv.style.opacity = '1';
+        if (btLoading) btLoading.style.display = 'none';
+        if (btChartDiv) btChartDiv.style.opacity = '1';
+        
+        alert('서버와 통신하는 중 오류가 발생했습니다.');
+        
+        if (placeholder) placeholder.style.display = 'flex';
+        if (btPlaceholder) btPlaceholder.style.display = 'flex';
     }
 };
