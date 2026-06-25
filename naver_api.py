@@ -54,3 +54,52 @@ async def fetch_naver_trend(
                 raise Exception(error_msg)
         except httpx.RequestError as exc:
             raise Exception(f"네이버 API 요청 중 네트워크 오류가 발생했습니다: {exc}")
+
+async def fetch_datalab_top_keywords(
+    cid: str = "50022619", # 기본값: 스낵/과자 카테고리
+    count: int = 20,
+    days_ago: int = 30
+) -> List[str]:
+    """
+    네이버 데이터랩 쇼핑인사이트 웹 페이지의 숨겨진 내부 API를 호출하여,
+    해당 카테고리의 실제 인기 검색어(Top 순위)를 동적으로 스크래핑합니다.
+    """
+    from datetime import datetime, timedelta
+    
+    import asyncio
+    
+    url = "https://datalab.naver.com/shoppingInsight/getCategoryKeywordRank.naver"
+    end_date_str = datetime.now().strftime("%Y-%m-%d")
+    start_date_str = (datetime.now() - timedelta(days=days_ago)).strftime("%Y-%m-%d")
+    
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+        'Referer': 'https://datalab.naver.com/shoppingInsight/sCategory.naver',
+        'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+        'X-Requested-With': 'XMLHttpRequest'
+    }
+    
+    all_keywords = []
+    # 최대 페이지 수 계산 (한 페이지당 20개)
+    pages = (count + 19) // 20
+    
+    async with httpx.AsyncClient() as client:
+        try:
+            for p in range(1, pages + 1):
+                data = f"cid={cid}&timeUnit=date&startDate={start_date_str}&endDate={end_date_str}&age=&gender=&device=&page={p}&count=20"
+                response = await client.post(url, headers=headers, content=data, timeout=10.0)
+                if response.status_code == 200:
+                    res_data = response.json()
+                    ranks = res_data.get("ranks", [])
+                    page_keywords = [item["keyword"] for item in ranks]
+                    all_keywords.extend(page_keywords)
+                    if len(all_keywords) >= count:
+                        break
+                else:
+                    print(f"[Warning] 인기검색어 조회 실패 (상태 코드 {response.status_code}) - page {p}: {response.text[:100]}")
+                    break
+                await asyncio.sleep(0.1) # Rate limit 방어
+            return all_keywords[:count]
+        except Exception as e:
+            print(f"[Error] 인기검색어 스크래핑 중 예외 발생: {e}")
+            return all_keywords[:count]

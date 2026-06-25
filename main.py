@@ -9,6 +9,18 @@ from naver_api import fetch_naver_trend
 from forecaster import forecast_trend
 from naver_ad_api import fetch_search_ad_volume
 
+# 가속도 랭킹 모듈 임포트 (언제든 뗄 수 있는 독립 구조)
+try:
+    from pipeline.velocity_model import get_velocity_ranking
+except ImportError:
+    get_velocity_ranking = None
+
+# Weak Signal 감지 엔진 모듈 임포트
+try:
+    from pipeline.services.trend_detector import detect_weak_signals
+except ImportError:
+    detect_weak_signals = None
+
 app = FastAPI(title="네이버 데이터랩 트렌드 예측 API", description="네이버 검색어 트렌드를 수집하고 시계열 예측을 제공하는 서비스")
 
 # CORS 설정
@@ -19,6 +31,15 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.on_event("startup")
+def startup_event():
+    try:
+        from pipeline.scheduler import init_scheduler
+        init_scheduler()
+    except ImportError as e:
+        print(f"Scheduler module not found: {e}")
+
 
 # API 요청 스키마 정의
 class KeywordGroup(BaseModel):
@@ -141,6 +162,61 @@ async def predict_trend(payload: PredictRequest):
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
 
+# === [가속도 랭킹 API 연동부] ===
+@app.get("/api/velocity-ranking")
+async def get_velocity_ranking_api(start_date: Optional[str] = None, end_date: Optional[str] = None, use_live: bool = True):
+    """
+    백그라운드 스케줄러가 미리 수집해둔 식품 전체(Top 500) 가속도 랭킹 캐시를 반환합니다.
+    """
+    if use_live:
+        from pipeline.scheduler import VELOCITY_CACHE, LOCK_FILE
+        import json
+        
+        if os.path.exists(VELOCITY_CACHE):
+            with open(VELOCITY_CACHE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        elif os.path.exists(LOCK_FILE):
+            return {"message": "현재 500개의 식품 트렌드 데이터를 수집 및 분석 중입니다. 약 2~3분 후 새로고침 해주세요.", "data": []}
+        else:
+            return {"error": "캐시된 데이터가 없습니다. 서버 백그라운드 수집을 기다려주세요.", "data": []}
+    else:
+        if get_velocity_ranking is None:
+            raise HTTPException(status_code=500, detail="가속도 랭킹 모듈을 찾을 수 없습니다.")
+            
+        result = get_velocity_ranking(start_date, end_date)
+        if "error" in result:
+            raise HTTPException(status_code=404, detail=result["error"])
+        return result
+# ===============================
+
+# === [Weak Signal 감지 API 연동부] ===
+@app.get("/api/weak-signals")
+async def get_weak_signals_api(target_date: Optional[str] = None, use_live: bool = True):
+    """
+    고도화된 AI 피처 엔진을 통해 넥스트 히트 상품(Weak Signal) 랭킹 캐시를 반환합니다.
+    """
+    if detect_weak_signals is None:
+        raise HTTPException(status_code=500, detail="Weak Signal 엔진 모듈을 찾을 수 없습니다.")
+        
+    try:
+        if use_live:
+            from pipeline.scheduler import WEAK_SIGNALS_CACHE, LOCK_FILE
+            import json
+            
+            if os.path.exists(WEAK_SIGNALS_CACHE):
+                with open(WEAK_SIGNALS_CACHE, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            elif os.path.exists(LOCK_FILE):
+                return {"message": "현재 500개의 식품 트렌드 데이터를 수집 및 분석 중입니다. 약 2~3분 후 새로고침 해주세요.", "data": []}
+            else:
+                return {"error": "캐시된 데이터가 없습니다. 서버 백그라운드 수집을 기다려주세요.", "data": []}
+        else:
+            results = detect_weak_signals(target_date)
+            return {"data": results}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"엔진 분석 오류: {str(e)}")
+# ===============================
+
 # 프론트엔드 정적 파일 서빙을 위한 설정
 static_dir = os.path.join(os.path.dirname(__file__), "static")
 if not os.path.exists(static_dir):
@@ -158,4 +234,4 @@ app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)
+    uvicorn.run("main:app", host="127.0.0.1", port=8000)
