@@ -319,20 +319,18 @@ class TrendChartHelper {
                     const data = w.globals.initialSeries;
                     const category = w.globals.categoryLabels[dataPointIndex];
                     
-                    let html = `<div style="padding: 12px; background: rgba(255, 255, 255, 0.95); border: 1px solid var(--card-border); border-radius: 8px; box-shadow: var(--shadow-md); backdrop-filter: blur(4px);">`;
-                    html += `<div style="margin-bottom: 10px; font-weight: 700; color: var(--text-muted); font-size: 12px;">${category}</div>`;
+                    let html = `<div style="padding: 12px; background: rgba(255, 255, 255, 0.97); border: 1px solid #e5e7eb; border-radius: 8px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05), 0 2px 4px -1px rgba(0,0,0,0.03); backdrop-filter: blur(4px);">`;
+                    html += `<div style="margin-bottom: 10px; font-weight: 700; color: #6b7280; font-size: 12px;">${category}</div>`;
                     
                     data.forEach((s, idx) => {
                         const val = s.data[dataPointIndex];
                         if (val !== null && val !== undefined) {
-                            // w.config.colors에 우리가 주입한 strokeColors가 들어있음
                             const color = w.config.colors[idx] || '#111827';
                             
-                            // 상하한선처럼 투명도가 들어간 색상이면 그대로 쓰고, 아니면 그대로 씀
                             html += `<div style="display: flex; align-items: center; margin-bottom: 6px;">
                                 <span style="display: inline-block; width: 10px; height: 10px; border-radius: 50%; background-color: ${color}; margin-right: 8px; box-shadow: 0 0 0 1px rgba(0,0,0,0.05);"></span>
-                                <span style="font-size: 13px; color: var(--text-main); margin-right: 16px;">${s.name}</span>
-                                <span style="font-weight: 700; font-size: 13px; color: var(--text-main); margin-left: auto;">${val.toFixed(0)}건</span>
+                                <span style="font-size: 13px; color: #111827; margin-right: 16px;">${s.name}</span>
+                                <span style="font-weight: 700; font-size: 13px; color: #111827; margin-left: auto;">${val.toFixed(0)}건</span>
                             </div>`;
                         }
                     });

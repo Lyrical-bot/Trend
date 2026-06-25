@@ -140,6 +140,9 @@ async def predict_trend(payload: PredictRequest):
                 forecast_steps=payload.forecastSteps
             )
 
+            # --- 전조 감지: 스케일링 적용 전에 원본 비율값(0~100)으로 수행 ---
+            signals = detect_early_signals(historical) if detect_early_signals else []
+
             # --- 스케일링 로직 추가 (비율 0~100 -> 실제 검색량(건)) ---
             multiplier = _get_scale_multiplier(historical, group_monthly_volume, len(historical), payload.timeUnit)
             if multiplier != 1.0:
@@ -151,7 +154,10 @@ async def predict_trend(payload: PredictRequest):
                 summary["lastForecastValue"] = round(summary["lastForecastValue"] * multiplier, 0)
                 summary["maxRatio"] = round(summary["maxRatio"] * multiplier, 0)
 
-            signals = detect_early_signals(historical) if detect_early_signals else []
+                # signal 내부의 volume 값도 스케일링
+                for sig in signals:
+                    if "volume" in sig:
+                        sig["volume"] = round(sig["volume"] * multiplier, 0)
 
             # 과거 + 예측 데이터 병합
             combined_data = historical + forecasted
@@ -278,6 +284,9 @@ async def predict_single_keyword(payload: PredictKeywordRequest):
             forecast_steps=payload.forecastSteps
         )
 
+        # --- 전조 감지: 스케일링 적용 전에 원본 비율값(0~100)으로 수행 ---
+        signals = detect_early_signals(historical) if detect_early_signals else []
+
         # 스케일링 로직
         multiplier = _get_scale_multiplier(historical, group_monthly_volume, len(historical))
         if multiplier != 1.0:
@@ -288,7 +297,10 @@ async def predict_single_keyword(payload: PredictKeywordRequest):
             summary["lastForecastValue"] = round(summary["lastForecastValue"] * multiplier, 0)
             summary["maxRatio"] = round(summary["maxRatio"] * multiplier, 0)
 
-        signals = detect_early_signals(historical) if detect_early_signals else []
+            # signal 내부의 volume 값도 스케일링
+            for sig in signals:
+                if "volume" in sig:
+                    sig["volume"] = round(sig["volume"] * multiplier, 0)
 
         combined_data = historical + forecasted
 
