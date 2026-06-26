@@ -283,14 +283,19 @@ class TrendChartHelper {
                 show: false // 커스텀 레전드를 사용하므로 끔
             },
             xaxis: {
+                type: 'datetime',
                 categories: allPeriods,
                 labels: {
                     style: {
                         colors: '#6b7280',
                         fontSize: '11px'
                     },
-                    rotate: -45,
-                    trim: true
+                    datetimeFormatter: {
+                        year: 'yyyy년',
+                        month: "yyyy년 MM월",
+                        day: 'MM.dd',
+                        hour: 'HH:mm'
+                    }
                 },
                 axisBorder: {
                     show: false
@@ -317,7 +322,12 @@ class TrendChartHelper {
                 intersect: false,
                 custom: function({series, seriesIndex, dataPointIndex, w}) {
                     const data = w.globals.initialSeries;
-                    const category = w.globals.categoryLabels[dataPointIndex];
+                    let category = w.globals.categoryLabels[dataPointIndex] || w.globals.labels[dataPointIndex];
+                    
+                    if (typeof category === 'number' || (typeof category === 'string' && !isNaN(new Date(category).getTime()))) {
+                        const d = new Date(category);
+                        category = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+                    }
                     
                     let html = `<div style="padding: 12px; background: rgba(255, 255, 255, 0.97); border: 1px solid #e5e7eb; border-radius: 8px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05), 0 2px 4px -1px rgba(0,0,0,0.03); backdrop-filter: blur(4px);">`;
                     html += `<div style="margin-bottom: 10px; font-weight: 700; color: #6b7280; font-size: 12px;">${category}</div>`;

@@ -26,9 +26,9 @@ KEYWORDS = [
 async def collect_data():
     print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] F&B 타겟 키워드 {len(KEYWORDS)}개 데이터 수집 시작...")
     
-    # 1. 수집 기간: 오늘로부터 과거 1년 (약 365일)
+    # 1. 수집 기간: 오늘로부터 과거 3년 3개월 (약 1185일)
     end_date = datetime.now()
-    start_date = end_date - timedelta(days=365)
+    start_date = end_date - timedelta(days=1185)
     
     start_str = start_date.strftime("%Y-%m-%d")
     end_str = end_date.strftime("%Y-%m-%d")
