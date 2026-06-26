@@ -53,8 +53,14 @@ def _build_model(time_unit: str, use_yearly: bool) -> Prophet:
     return model
 
 def _fit_model(df: pd.DataFrame, time_unit: str) -> Prophet:
-    train_df = _smooth_outliers(df)
-    model = _build_model(time_unit, _use_yearly_seasonality(train_df))
+    use_yearly = _use_yearly_seasonality(df)
+    # 10년 치 데이터(계절성 있음)일 경우 정상적인 여름 피크가 아웃라이어로 잘려나가는 것을 방지
+    if use_yearly:
+        train_df = df.copy()
+    else:
+        train_df = _smooth_outliers(df)
+    
+    model = _build_model(time_unit, use_yearly)
     model.fit(train_df)
     return model
 

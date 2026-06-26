@@ -14,12 +14,18 @@ def _get_scale_multiplier(data_list: list, monthly_volume: float, days_queried: 
     """네이버 비율값(0~100)을 실제 검색 건수로 환산하기 위한 배수를 계산합니다."""
     if monthly_volume <= 0 or not data_list:
         return 1.0
+        
+    # 광고 데이터(monthly_volume)가 '최근 30일' 기준이므로, 비율 총합도 '최근 30일' 치만 사용해야 10년 치 왜곡이 없습니다.
+    recent_data = data_list[-30:] if len(data_list) >= 30 else data_list
+    recent_days = len(recent_data)
+    
     if time_unit == 'week':
-        days_queried *= 7
+        recent_days *= 7
     elif time_unit == 'month':
-        days_queried *= 30
-    total_ratio = sum(item["ratio"] for item in data_list)
-    estimated_monthly = (total_ratio / max(1, days_queried)) * 30
+        recent_days *= 30
+        
+    total_ratio = sum(item["ratio"] for item in recent_data)
+    estimated_monthly = (total_ratio / max(1, recent_days)) * 30
     return monthly_volume / estimated_monthly if estimated_monthly > 0 else 1.0
 
 def _apply_scaling(items: list, multiplier: float, keys=("ratio", "yhat_lower", "yhat_upper")):
@@ -250,7 +256,7 @@ async def predict_single_keyword(payload: PredictKeywordRequest):
         from datetime import datetime, timedelta
         
         end_date = datetime.now()
-        start_date = end_date - timedelta(days=365)
+        start_date = end_date - timedelta(days=1185)
         start_date_str = start_date.strftime("%Y-%m-%d")
         end_date_str = end_date.strftime("%Y-%m-%d")
         
@@ -320,7 +326,7 @@ async def evaluate_single_keyword(payload: PredictKeywordRequest):
         from datetime import datetime, timedelta
         
         end_date = datetime.now()
-        start_date = end_date - timedelta(days=365)
+        start_date = end_date - timedelta(days=1185)
         start_date_str = start_date.strftime("%Y-%m-%d")
         end_date_str = end_date.strftime("%Y-%m-%d")
         

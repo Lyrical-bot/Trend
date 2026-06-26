@@ -163,6 +163,9 @@ async def detect_weak_signals_live(keywords: list[str], days_ago: int = 60) -> l
         except Exception as e:
             print(f"Error fetching naver trend for {chunk}: {e}")
             
+        import asyncio
+        await asyncio.sleep(0.5) # Rate limit 방어
+            
     # 점수 높은 순 정렬
     results = sorted(results, key=lambda x: x["trend_score"], reverse=True)
     return results
