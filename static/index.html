@@ -13,7 +13,7 @@
     <!-- ApexCharts CDN -->
     <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
     <!-- Custom CSS -->
-    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="/static/css/style.css?v=4">
 </head>
 <body>
     <div class="app-container">
@@ -191,6 +191,8 @@
                             </tbody>
                         </table>
                     </div>
+                    <!-- 페이지네이션 컨테이너 추가 -->
+                    <div id="weak-signal-pagination" style="padding-bottom: 20px;"></div>
                 </section>
                 <!-- [모듈 끝] -->
 
@@ -239,10 +241,10 @@
                     <!-- Dynamically generated summary cards will go here -->
                 </section>
 
-                <!-- Chart Card -->
-                <section class="clean-card chart-container">
+                <!-- Chart Card (Prediction) -->
+                <section class="clean-card chart-container" style="margin-bottom: 1.5rem;">
                     <div class="chart-header-row">
-                        <h2 class="section-title"><i class="fa-solid fa-chart-area"></i> 트렌드 예측 시각화</h2>
+                        <h2 class="section-title"><i class="fa-solid fa-chart-area"></i> 미래 30일 트렌드 예측 시각화</h2>
                         <div class="chart-legend">
                             <span class="legend-item"><span class="legend-color hist"></span>과거 트렌드</span>
                             <span class="legend-item"><span class="legend-color fore"></span>미래 예측</span>
@@ -250,13 +252,34 @@
                     </div>
                     <div id="chart-loading" class="chart-overlay" style="display: none;">
                         <div class="spinner"></div>
-                        <p>네이버 데이터랩 데이터를 분석하고 머신러닝 예측을 수행하는 중...</p>
+                        <p id="loading-msg">네이버 데이터랩 데이터를 분석하고 머신러닝 예측을 수행하는 중...</p>
                     </div>
                     <div id="chart-placeholder" class="chart-overlay">
-                        <i class="fa-solid fa-chart-line-up placeholder-icon"></i>
-                        <p>분석 조건을 입력한 후 <strong>'트렌드 예측 분석 실행'</strong> 버튼을 클릭하세요.</p>
+                        <i class="fa-solid fa-chart-line placeholder-icon"></i>
+                        <p>표에서 키워드를 클릭하면 <strong>미래 예측 차트</strong>가 표시됩니다.</p>
                     </div>
                     <div id="trend-chart"></div>
+                </section>
+
+                <!-- Chart Card (Backtest) -->
+                <section class="clean-card chart-container backtest-container">
+                    <div class="chart-header-row">
+                        <h2 class="section-title"><i class="fa-solid fa-microscope"></i> 모델 정확도 검증 (과거 15일 백테스트)</h2>
+                        <div class="chart-legend">
+                            <span class="legend-item"><span class="legend-color hist"></span>학습 구간</span>
+                            <span class="legend-item"><span class="legend-color hist" style="background:#3b82f6"></span>실제 정답</span>
+                            <span class="legend-item"><span class="legend-color fore"></span>AI 예측</span>
+                        </div>
+                    </div>
+                    <div id="backtest-loading" class="chart-overlay" style="display: none;">
+                        <div class="spinner"></div>
+                        <p id="backtest-loading-msg">과거 데이터를 분할하여 정확도 검증을 수행 중...</p>
+                    </div>
+                    <div id="backtest-placeholder" class="chart-overlay">
+                        <i class="fa-solid fa-flask placeholder-icon"></i>
+                        <p>표에서 키워드를 클릭하면 <strong>백테스트 검증 차트</strong>가 함께 표시됩니다.</p>
+                    </div>
+                    <div id="backtest-chart"></div>
                 </section>
 
                 <!-- Report Details -->
@@ -279,8 +302,7 @@
         </div>
     </div>
 
-    <!-- Custom Scripts -->
-    <script src="/static/js/chart-helper.js"></script>
-    <script src="/static/js/app.js"></script>
+    <script src="/static/js/chart-helper.js?v=7"></script>
+    <script src="/static/js/app.js?v=7"></script>
 </body>
 </html>

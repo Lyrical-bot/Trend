@@ -2,23 +2,37 @@ import numpy as np
 
 def calculate_stability(daily_volumes: list[float]) -> dict:
     """
-    Stability Score 계산
-    최근 7일간의 변동계수(CV = 표준편차/평균) 활용.
+    Stability Score 계산 (개선판)
+    
+    기존 문제: 변동계수(CV)로 측정하면 유행 시작 시 검색량이 급등하면서
+    CV가 높아져 오히려 감점됨 — 유행 전조와 모순.
+    
+    개선: '상승 방향의 일관성'을 측정.
+    최근 7일간 전일 대비 변화량(diff)의 부호가 얼마나 일관된지 확인.
+    모두 양수(꾸준히 상승)이면 100점, 오르락내리락이면 낮은 점수.
+    
+    이렇게 하면 검색량이 '불안정하게 튀는 노이즈'와 
+    '꾸준히 한 방향으로 오르는 진짜 트렌드'를 구분할 수 있음.
     """
-    if len(daily_volumes) < 7:
+    if len(daily_volumes) < 8:
         return {"stability_score": 0.0}
-        
-    recent_7 = daily_volumes[-7:]
-    mean_val = np.mean(recent_7)
     
-    if mean_val == 0:
-        return {"stability_score": 100.0} # 0으로 일정한 경우 안정적이라 볼 수도 있음 (하지만 volume score가 낮아짐)
-        
-    std_val = np.std(recent_7)
-    cv = std_val / mean_val
+    recent_8 = daily_volumes[-8:]
+    diffs = [recent_8[i] - recent_8[i - 1] for i in range(1, 8)]
     
-    # CV가 0에 가까울수록 안정적(100점). CV가 1.0 이상이면 0점.
-    score = max(0.0, 100.0 - (cv * 100.0))
+    # 방향 일관성: 양수 diff의 비율 측정
+    positive_count = sum(1 for d in diffs if d > 0)
+    negative_count = sum(1 for d in diffs if d < 0)
+    
+    total_nonzero = positive_count + negative_count
+    if total_nonzero == 0:
+        return {"stability_score": 50.0}  # 변동 없음 = 보통
+    
+    # 한쪽 방향으로 쏠린 정도 (0.5 = 오르락내리락, 1.0 = 한 방향)
+    dominant_ratio = max(positive_count, negative_count) / total_nonzero
+    
+    # 0.5 → 0점, 1.0 → 100점으로 선형 매핑
+    score = max(0.0, (dominant_ratio - 0.5) * 200.0)
     
     return {
         "stability_score": round(score, 1)
