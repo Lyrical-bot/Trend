@@ -8,6 +8,7 @@
 ## 🏷️ v2.4 — 전조 감지 정밀도 개선 및 코드 품질 강화 (2026-06-25)
 
 ### 주요 개선 사항
+
 1. **🔴 치명적 버그 수정: Signal 감지 순서 교정**
    - `main.py`에서 `detect_early_signals()`가 스케일링(비율→실제 건수 변환) **이후**에 호출되어, Config의 기준값(`min_current_volume=100`)이 사실상 무의미해지던 버그 수정
    - `/api/predict`와 `/api/predict-keyword` 두 엔드포인트 모두에서 **스케일링 전에 원본 비율값(0~100)으로 Signal을 먼저 감지**한 뒤, Signal 내부의 volume 값만 나중에 스케일링하도록 순서 교정
@@ -35,6 +36,7 @@
 ## 🏷️ v2.3 — 유행 전조 감지 레이어 추가 (2026-06-25)
 
 ### 주요 개선 사항
+
 1. **조기 경보 감지 모듈 분리 추가**
    - `pipeline/services/early_signal_detector.py`를 새로 추가하여 Prophet 예측과 독립적인 유행 전조 감지 레이어를 구성
    - `EarlySignalConfig`에 threshold, cooldown, breakout horizon 등을 모아 언제든 수정/삭제하기 쉽게 분리
@@ -66,9 +68,9 @@
    - 기존 `changepoint_prior_scale=0.01`, 조건부 연간 계절성 정책은 유지하여 급격한 과적합을 계속 억제
 3. **백테스트 지표 확장**
    - 기존 MAPE/정확도 외에 `SMAPE`, `MAE`, 방향성 정확도(`directionAccuracy`)를 추가
-     - *`SMAPE` (대칭 평균 절대 백분율 오차)*: 검색량이 적을 때 오차율이 과도하게 뻥튀기되는 기존 MAPE의 단점을 보완한 지표입니다.
-     - *`MAE` (평균 절대 오차)*: 퍼센트(%)가 아닌 "실제 검색량 수치(건수)"가 평균적으로 얼마나 차이 났는지 보여주는 직관적인 지표입니다.
-     - *방향성 정확도 (`directionAccuracy`)*: 검색량이 내일 오를지 내릴지, 그 '추세의 방향'을 맞춘 확률(%)을 의미합니다.
+     - _`SMAPE` (대칭 평균 절대 백분율 오차)_: 검색량이 적을 때 오차율이 과도하게 뻥튀기되는 기존 MAPE의 단점을 보완한 지표입니다.
+     - _`MAE` (평균 절대 오차)_: 퍼센트(%)가 아닌 "실제 검색량 수치(건수)"가 평균적으로 얼마나 차이 났는지 보여주는 직관적인 지표입니다.
+     - _방향성 정확도 (`directionAccuracy`)_: 검색량이 내일 오를지 내릴지, 그 '추세의 방향'을 맞춘 확률(%)을 의미합니다.
    - 낮은 검색량 키워드에서 MAPE만 과도하게 흔들리는 문제를 보완
 4. **Rolling Backtest 추가**
    - 최근 15일 단일 holdout 평가에 더해 최대 3개 구간 rolling backtest 요약을 제공
@@ -186,3 +188,28 @@
 ## 📌 이전 버전 참고
 
 초창기(v1.0) 설계 문서는 [`AGENT_INSTRUCTIONS.md`](./AGENT_INSTRUCTIONS.md)를 참고하세요.
+
+## 2026-06-25
+
+1. Backend 파일 내부 check.ipynb 파일에 메타 api 직접 연결
+2. api 에서 가져온 데이터 날짜, 시간 별로 데이터 저장을 위해서 캐시 설정 및 api 호출 횟수 줄이는 우회 경로 코드 작성
+
+예상 구조도
+Backend/
+│
+├── key/
+│ └── .env
+│
+├── cache/
+│ ├── hashtag_cache.json # keyword → hashtag_id
+│ └── media_cache/ # 최근 수집 시간
+│ ├── 황치즈.json
+│ ├── 말차.json
+│ └── ...
+│
+├── data/
+│ ├── 2026-06-26.json
+│ ├── 2026-06-27.json
+│ └── ...
+│
+└── instagram_collector.py
