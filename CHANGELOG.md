@@ -8,10 +8,11 @@
 ## 🏷️ v2.5 — 장기 계절성 예측 오류 해결 및 차트 UI 개편 (2026-06-26)
 
 ### 주요 개선 사항
+
 1. **계절성(Seasonality) 예측 정확도 개선: 데이터 수집 기간 1년 → 3년 3개월 확장**
    - 기존 1년(365일)치 데이터만 수집하여 `Prophet` 모델이 여름철/겨울철 등 특정 계절 상품(수박, 오디 등)의 사이클을 단순 하락 추세(Trend)로 오해하던 문제 해결
    - `main.py`와 `pipeline/data_collector.py`의 수집 기간을 3년 3개월(1185일)로 확장하여 `Prophet`이 `yearly_seasonality`를 자동으로 학습하도록 조치
-   - *(참고: 초기에 10년 치로 확장했으나 API 응답 속도 및 모델 학습 속도 저하 문제로 2년으로 내렸다가, 완전한 3번의 여름 사이클(23년 4월 말 시작)을 확보하기 위해 최종 3년 3개월로 타협)*
+   - _(참고: 초기에 10년 치로 확장했으나 API 응답 속도 및 모델 학습 속도 저하 문제로 2년으로 내렸다가, 완전한 3번의 여름 사이클(23년 4월 말 시작)을 확보하기 위해 최종 3년 3개월로 타협)_
 2. **프론트엔드 차트 반응형 X축(시계열) 도입**
    - 10년 치 방대한 데이터 렌더링 시 X축 라벨(날짜)이 겹쳐서 까맣게 뭉개지는 현상 해결
    - `static/js/chart-helper.js`의 ApexCharts 설정에서 `xaxis.type`을 `datetime`으로 변경하여, 축소/확대 줌(Zoom) 비율에 따라 '연/월' 및 '일' 표기가 동적으로 전환되도록 개선
@@ -233,4 +234,124 @@ Backend/
 │ ├── 2026-06-27.json
 │ └── ...
 │
-└── instagram_collector.py
+└── instagram_collector.py 3. 백엔드 및 프론트엔드 분리 구현 계획
+현재 프로젝트(Trend)는 FastAPI 백엔드 코드와 정적 HTML/CSS/JS 프론트엔드 파일이 루트 폴더와 static 폴더에 혼재되어 있습니다. 또한 백엔드 모듈 일부가 루트에 있고, 일부가 Backend/ 폴더에 나누어져 있어서 구조가 직관적이지 못합니다. 이를 백엔드(Backend)와 프론트엔드(Frontend)로 명확히 분리하여 독립적인 구동 및 관리가 가능하도록 개선하고자 합니다.
+
+제안하는 디렉토리 구조
+
+Trend/
+├── Backend/ # 백엔드 관련 파일 및 폴더 일체
+│ ├── pipeline/ # 기존 pipeline 폴더 이동 (스케줄러, 데이터 수집)
+│ ├── datasets/ # 기존 datasets 폴더 이동 (데이터 캐시, CSV)
+│ ├── key/ # 기존 key 폴더 (.env 환경 변수 파일 포함)
+│ ├── main.py # 최종 백엔드 엔트리포인트 (기존 main.py와 backend.py 병합)
+│ ├── forecaster.py # 분석 및 예측 로직
+│ ├── naver_api.py # 네이버 트렌드 API 연동
+│ ├── naver_ad_api.py # 네이버 검색 광고 API 연동
+│ ├── meta_api.py # 메타 광고 API 연동
+│ ├── get_cid.py # 유틸리티 스크립트
+│ ├── get_naver_popular.py # 유틸리티 스크립트
+│ ├── get_rank.py # 유틸리티 스크립트
+│ ├── test_api.py # 테스트 스크립트
+│ ├── test_cid.py # 테스트 스크립트
+│ ├── requirements.txt # 백엔드 의존성 패키지
+│ └── (기타 캐시 파일 등)
+│
+└── Frontend/ # 프론트엔드 관련 파일 및 폴더 일체
+├── index.html # 대시보드 화면
+├── css/ # 스타일시트 폴더
+└── js/ # 자바스크립트 폴더 (API 호출 주소 수정)
+├── app.js
+└── chart-helper.js
+주요 작업 항목
+
+1. 백엔드(Backend) 디렉토리 구성
+   파일 이동: 루트에 흩어져 있는 파이썬 파일(\*.py)과 백엔드 디렉토리(pipeline/, datasets/)를 Backend/ 폴더 내부로 이동시킵니다.
+   백엔드 소스코드 병합 및 수정:
+   기존 main.py와 Backend/backend.py는 둘 다 FastAPI 앱을 띄우는 파일입니다. 두 파일의 엔드포인트를 하나로 통합하여 Backend/main.py로 단일화합니다. (특히 backend.py에 추가되었던 /api/meta-accounts 엔드포인트와 main.py에 있던 Prophet 예측/백테스트 엔드포인트를 병합합니다.)
+   백엔드에서 더 이상 프론트엔드 정적 파일(static/)을 마운트하여 서빙하지 않도록 정적 파일 서빙 코드(StaticFiles, FileResponse 등)를 제거합니다.
+   기존 파이썬 파일들이 상위 폴더를 참조하기 위해 사용하던 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(**file**)))) 같은 경로 조작 로직을 제거하거나 로컬 패스에 맞춰 단순화합니다.
+   정리 및 삭제: 중복되는 Backend/backend.py는 병합 완료 후 삭제합니다.
+2. 프론트엔드(Frontend) 디렉토리 구성
+   폴더명 변경: 기존 static/ 폴더를 Frontend/로 이름을 변경합니다.
+   API 호출 경로 수정:
+   Frontend/js/app.js에서 기존에는 동일 서버 내에서 제공됨을 전제로 상대 경로(/api/predict, /api/velocity-ranking, /api/weak-signals 등)를 통해 API를 호출하고 있었습니다.
+   이를 백엔드 서버의 절대 주소(예: http://localhost:8000)를 바라보도록 수정합니다.
+   파일 상단에 const API_BASE_URL = 'http://localhost:8000';을 선언하고, 모든 fetch 함수가 ${API_BASE_URL}/api/...를 호출하게 수정합니다.
+   직접 file:// 프로토콜로 index.html을 열어 테스트할 수 있도록 app.js 내부의 file:// 차단 방어 코드를 비활성화하거나 수정합니다.
+3. 연동 및 CORS 설정 확인
+   백엔드와 프론트엔드의 포트 또는 도메인이 분리되므로 브라우저에서 CORS 문제가 발생할 수 있습니다.
+   FastAPI 백엔드의 CORSMiddleware가 allow_origins=["*"]로 열려 있는 것을 확인했으므로, 프론트엔드 단독 구동 시에도 문제없이 백엔드 API를 호출할 수 있습니다.
+   검증 계획 (Verification Plan)
+   수동 검증
+   백엔드 서버 실행: Backend 폴더로 이동하여 백엔드 서버를 구동합니다.
+   bash
+
+cd Backend
+python main.py
+서버가 http://127.0.0.1:8000에서 정상적으로 작동하는지 확인합니다.
+프론트엔드 실행 및 API 연동 테스트: Frontend/index.html을 브라우저로 직접 열거나 로컬 웹 서버(예: Live Server, Python SimpleHTTPServer)로 실행합니다.
+메인 대시보드 화면이 깨짐 없이 잘 나오는지 확인합니다.
+키워드 분석을 실행하여 백엔드 API(http://localhost:8000/api/predict)와 통신하고 차트 및 예측 데이터가 잘 그려지는지 확인합니다.
+가속도 랭킹 및 AI Weak Signal 리스트가 제대로 수집/렌더링되는지 확인합니다.
+
+실행 방법
+🚀 실행 방법 (상세 가이드)
+(PowerShell 사용 시 필수) 스크립트 실행 권한 허용
+Windows PowerShell에서는 기본적으로 가상환경 스크립트 실행이 차단되어 있을 수 있습니다. 터미널에 아래 명령어를 복사하여 붙여넣고 엔터를 칩니다.
+
+powershell
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope Process
+(이 명령은 현재 열려 있는 터미널 창에 한해 가상환경 활성화 권한을 임시로 부여합니다.)
+
+1. 가상환경 활성화
+   내가 사용하는 터미널 종류에 맞게 아래 명령어를 입력합니다. (성공하면 경로 앞에 (venv)라는 표시가 붙습니다.)
+
+PowerShell을 사용 중인 경우:
+powershell
+.\venv\Scripts\Activate.ps1
+CMD(명령 프롬프트)를 사용 중인 경우:
+cmd
+.\venv\Scripts\activate.bat 2. 필요한 라이브러리(패키지) 설치
+가상환경이 활성화된 상태 (venv)에서 아래 명령어를 입력하여 Prophet 모델 및 FastAPI 등 필요한 패키지들을 모두 설치합니다.
+
+powershell
+pip install -r Backend/requirements.txt
+⚠️ 참고 (Prophet 설치 에러 대처법):
+만약 설치 중 에러가 발생한다면 pip install --upgrade pip로 pip를 업데이트한 후 pip install prophet을 개별적으로 실행해 보세요.
+
+3단계: 백엔드 API 서버 구동
+라이브러리 설치가 끝나면 백엔드 폴더로 이동해 서버를 기동합니다. (가상환경 활성화 상태 유지)
+
+백엔드 폴더로 이동:
+powershell
+cd Backend
+FastAPI 서버 구동:
+powershell
+python main.py
+터미널에 다음과 같은 문구가 뜨면 백엔드가 http://127.0.0.1:8000 주소로 완벽히 켜진 것입니다.
+text
+INFO: Started server process [XXXX]
+INFO: Waiting for application startup.
+INFO: Application startup complete.
+INFO: Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+IMPORTANT
+
+이 터미널 창은 백엔드 서버가 켜져 있는 창이므로 그대로 켜두셔야 합니다. 다른 명령어를 치려면 새 터미널 창을 하나 더 열어야 합니다.
+
+4단계: 프론트엔드 대시보드 실행 (3가지 방법 중 택 1)
+백엔드 서버가 켜진 상태에서 프론트엔드를 실행하는 방법입니다. 편한 방식을 선택해 보세요.
+
+[방법 A] VS Code의 Live Server 사용 (가장 추천 👍)
+VS Code 좌측 파일 탐색기에서 Frontend 폴더 아래의 index.html 파일을 마우스 우클릭합니다.
+**[Open with Live Server]**를 클릭합니다. (VS Code 화면 우측 하단의 [Go Live] 버튼을 클릭해도 됩니다.)
+브라우저가 자동으로 열리며 http://127.0.0.1:5500/index.html 주소로 대시보드가 실행됩니다.
+[방법 B] 파이썬 간이 웹 서버 띄우기
+VS Code에서 **새 터미널(New Terminal)**을 하나 더 엽니다.
+프론트엔드 폴더로 이동합니다:
+powershell
+cd Frontend
+파이썬 기본 웹 서버를 구동합니다:
+powershell
+python -m http.server 5500
+크롬 등 인터넷 브라우저 주소창에 http://127.0.0.1:5500 을 입력하여 접속합니다.

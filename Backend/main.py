@@ -1,14 +1,16 @@
 import os
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from typing import List, Dict, Any, Optional
 from datetime import datetime, timedelta
 from naver_api import fetch_naver_trend
 from forecaster import forecast_trend, evaluate_trend_accuracy
 from naver_ad_api import fetch_search_ad_volume
+try:
+    from meta_api import get_meta_accounts
+except ImportError:
+    get_meta_accounts = None
 
 def _get_scale_multiplier(data_list: list, monthly_volume: float, days_queried: int, time_unit: str = "date") -> float:
     """네이버 비율값(0~100)을 실제 검색 건수로 환산하기 위한 배수를 계산합니다."""
@@ -373,20 +375,11 @@ async def evaluate_single_keyword(payload: PredictKeywordRequest):
         raise HTTPException(status_code=500, detail=str(exc))
 # ===============================
 
-# 프론트엔드 정적 파일 서빙을 위한 설정
-static_dir = os.path.join(os.path.dirname(__file__), "static")
-if not os.path.exists(static_dir):
-    os.makedirs(static_dir)
-
-@app.get("/")
-async def read_index():
-    index_file = os.path.join(static_dir, "index.html")
-    if os.path.exists(index_file):
-        return FileResponse(index_file)
-    return {"message": "대시보드 index.html 파일을 작성 중입니다. 잠시 후 새로고침해 주세요."}
-
-# static 폴더 마운트 (index.html 이외의 css, js 리소스 제공)
-app.mount("/static", StaticFiles(directory=static_dir), name="static")
+@app.get("/api/meta-accounts")
+def read_meta_accounts():
+    if get_meta_accounts is None:
+        raise HTTPException(status_code=500, detail="Meta API 모듈을 찾을 수 없습니다.")
+    return get_meta_accounts()
 
 if __name__ == "__main__":
     import uvicorn

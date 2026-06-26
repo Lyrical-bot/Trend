@@ -3,7 +3,9 @@ import httpx
 from dotenv import load_dotenv
 from typing import List, Dict, Any, Optional
 
-load_dotenv()
+# Backend/key/.env 경로를 동적으로 지정하여 환경 변수 로드
+dotenv_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "key", ".env")
+load_dotenv(dotenv_path=dotenv_path)
 
 NAVER_CLIENT_ID = os.getenv("NAVER_CLIENT_ID")
 NAVER_CLIENT_SECRET = os.getenv("NAVER_CLIENT_SECRET")

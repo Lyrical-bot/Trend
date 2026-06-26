@@ -1,3 +1,5 @@
+const API_BASE_URL = 'http://127.0.0.1:8000';
+
 document.addEventListener('DOMContentLoaded', () => {
     // 1. DOM Elements
     const forecastForm = document.getElementById('forecast-form');
@@ -9,15 +11,13 @@ document.addEventListener('DOMContentLoaded', () => {
     const filterBody = document.getElementById('filter-body');
     const accordion = filterAccordionToggle.closest('.accordion');
     const apiStatusBanner = document.getElementById('api-status-banner');
-    
-    // file:// 프로토콜 방지 방어 코드
+
+    // file:// 프로토콜 방지 방어 코드 (알림만 표시하고 실행은 차단하지 않도록 수정)
     if (window.location.protocol === 'file:') {
-        alert('경고: 이 프로그램은 백엔드 서버(FastAPI)와 연동되어야 정상 작동합니다.\n\n브라우저 주소창에 http://127.0.0.1:8000 을 입력하여 접속해 주세요.');
         apiStatusBanner.className = 'glass-card api-alert';
         apiStatusBanner.querySelector('.alert-icon i').className = 'fa-solid fa-triangle-exclamation';
-        apiStatusBanner.querySelector('h4').textContent = '로컬 파일 직접 실행 제한';
-        apiStatusBanner.querySelector('p').innerHTML = '현재 로컬 html 파일을 직접 열었습니다. 서버와의 통신이 불가하므로, 반드시 주소창에 <a href="http://127.0.0.1:8000" style="color:#00f2fe; text-decoration:underline;">http://127.0.0.1:8000</a> 을 직접 입력해 접속하십시오.';
-        return;
+        apiStatusBanner.querySelector('h4').textContent = '로컬 파일 직접 실행 모드';
+        apiStatusBanner.querySelector('p').innerHTML = '현재 로컬 html 파일을 직접 열었습니다. API 서버(127.0.0.1:8000)가 정상 구동 중이면 원격 데이터 분석이 가능합니다.';
     }
 
     const chartLoading = document.getElementById('chart-loading');
@@ -60,7 +60,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // 4. 키워드 그룹 추가/삭제 이벤트 관리
     let groupIndex = 2; // 초기 index.html에 0, 1이 들어 있으므로 다음은 2
-    
+
     btnAddGroup.addEventListener('click', () => {
         const currentGroups = keywordGroupsContainer.querySelectorAll('.keyword-group-item');
         if (currentGroups.length >= 3) {
@@ -132,7 +132,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const keywords = rawKeywords.split(',')
                 .map(kw => kw.trim())
                 .filter(kw => kw.length > 0);
-            
+
             if (groupName && keywords.length > 0) {
                 payload.keywordGroups.push({ groupName, keywords });
             }
@@ -148,7 +148,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (ages.length > 0) payload.ages = ages;
 
         try {
-            const response = await fetch('/api/predict', {
+            const response = await fetch(`${API_BASE_URL}/api/predict`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
@@ -164,7 +164,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // 성공 처리
             chartLoading.style.display = 'none';
-            
+
             // 네이버 API 연동 상태 배너 업데이트 (정상 연결 확인)
             apiStatusBanner.className = 'glass-card api-alert api-ok';
             apiStatusBanner.querySelector('.alert-icon i').className = 'fa-solid fa-circle-check';
@@ -183,13 +183,13 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (err) {
             chartLoading.style.display = 'none';
             chartPlaceholder.style.display = 'flex';
-            
+
             // API 에러 상태 배너 업데이트
             apiStatusBanner.className = 'glass-card api-alert';
             apiStatusBanner.querySelector('.alert-icon i').className = 'fa-solid fa-triangle-exclamation';
             apiStatusBanner.querySelector('h4').textContent = '분석 수행 실패';
             apiStatusBanner.querySelector('p').innerHTML = `오류 내용: <strong>${err.message}</strong><br>서버의 <code>.env</code> 파일에 네이버 API ID와 Secret이 잘 기입되었는지 확인해 주세요.`;
-            
+
             alert(`에러 발생: ${err.message}`);
         }
     });
@@ -236,7 +236,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function renderDetailedReport(results, timeUnit) {
         reportSection.style.display = 'block';
-        
+
         // 1. 모델 설명 업데이트
         // 어떤 모델이 사용되었는지 목록을 파싱
         const models = results.map(g => `${g.title} (${g.summary.modelUsed})`);
@@ -254,7 +254,7 @@ document.addEventListener('DOMContentLoaded', () => {
         results.forEach(group => {
             const summary = group.summary;
             const li = document.createElement('li');
-            
+
             let insightMsg = '';
             if (summary.trendStatus.includes('급격한 상승세')) {
                 insightMsg = `<strong>[${group.title}]</strong> 키워드는 최근 매우 높은 관심도를 유지하고 있으며, 향후에도 강력한 트렌드 확장이 예상되어 즉각적인 마케팅/콘텐츠 타겟팅에 적합합니다.`;
@@ -272,7 +272,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const maxDateObj = new Date(summary.maxDate);
             const todayObj = new Date();
             const diffDays = Math.ceil((maxDateObj - todayObj) / (1000 * 60 * 60 * 24));
-            
+
             if (diffDays > 0) {
                 insightMsg += ` 향후 대략 <strong>${diffDays}일 뒤</strong>인 <strong>${summary.maxDate}</strong> 경에 최대 트렌드 비율(${summary.maxRatio}%)에 도달할 것으로 계산되어 해당 시점을 겨냥한 프로모션 기획이 권장됩니다.`;
             } else {
@@ -326,11 +326,11 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // 가속도 랭킹을 서버에서 불러와 화면에 그리는 전역 함수
-window.fetchVelocityRanking = async function() {
+window.fetchVelocityRanking = async function () {
     const tbody = document.getElementById('velocity-ranking-list');
     const velStartInput = document.getElementById('vel-start-date');
     const velEndInput = document.getElementById('vel-end-date');
-    
+
     if (!tbody) return; // 모듈이 없으면 실행 안함
 
     let queryParams = '';
@@ -346,7 +346,7 @@ window.fetchVelocityRanking = async function() {
     </tr>`;
 
     try {
-        const response = await fetch(`/api/velocity-ranking${queryParams}`);
+        const response = await fetch(`${API_BASE_URL}/api/velocity-ranking${queryParams}`);
         const result = await response.json();
 
         if (!response.ok) {
@@ -369,7 +369,7 @@ window.fetchVelocityRanking = async function() {
             if (row.velocity_score > 50) {
                 symbol = '🚀🚀 +'; color = '#ef4444'; // 빨간색 강조
             } else if (row.velocity_score > 0) {
-                symbol = '🚀 +'; color = '#ef4444'; 
+                symbol = '🚀 +'; color = '#ef4444';
             } else {
                 symbol = '📉 '; color = '#3b82f6'; // 파란색
             }
@@ -392,10 +392,10 @@ window.fetchVelocityRanking = async function() {
 };
 
 // Weak Signal 감지 엔진 데이터를 불러오는 전역 함수
-window.fetchWeakSignals = async function() {
+window.fetchWeakSignals = async function () {
     const tbody = document.getElementById('weak-signal-list');
     const weakEndInput = document.getElementById('weak-end-date');
-    
+
     if (!tbody) return;
 
     let queryParams = '';
@@ -411,7 +411,7 @@ window.fetchWeakSignals = async function() {
     </tr>`;
 
     try {
-        const response = await fetch(`/api/weak-signals${queryParams}`);
+        const response = await fetch(`${API_BASE_URL}/api/weak-signals${queryParams}`);
         const result = await response.json();
 
         if (!response.ok) {
@@ -430,7 +430,7 @@ window.fetchWeakSignals = async function() {
         // 전역 변수에 데이터 저장 (페이지네이션 용)
         window.weakSignalData = result.data;
         window.currentWeakSignalPage = 1;
-        
+
         // 첫 페이지 렌더링
         window.renderWeakSignalPage(1);
 
@@ -445,14 +445,14 @@ window.currentWeakSignalPage = 1;
 const WEAK_SIGNAL_PER_PAGE = 20;
 
 // 페이지네이션 렌더링 함수
-window.renderWeakSignalPage = function(page) {
+window.renderWeakSignalPage = function (page) {
     const tbody = document.getElementById('weak-signal-list');
     const paginationContainer = document.getElementById('weak-signal-pagination');
     if (!tbody || !window.weakSignalData) return;
 
     const data = window.weakSignalData;
     const totalPages = Math.ceil(data.length / WEAK_SIGNAL_PER_PAGE);
-    
+
     // 페이지 범위 보정
     if (page < 1) page = 1;
     if (page > totalPages) page = totalPages;
@@ -472,7 +472,7 @@ window.renderWeakSignalPage = function(page) {
     let html = '';
     pageData.forEach((row, idx) => {
         const actualIndex = startIndex + idx;
-        
+
         // 시그널 등급 뱃지 색상
         let badgeStyle = 'background: #374151; color: #d1d5db;'; // IGNORE (Gray)
         if (row.signal_level === 'VERY HIGH') badgeStyle = 'background: #ef4444; color: white; box-shadow: 0 0 10px rgba(239, 68, 68, 0.5);';
@@ -504,7 +504,7 @@ window.renderWeakSignalPage = function(page) {
     // 페이지네이션 버튼 생성
     if (paginationContainer && totalPages > 1) {
         let paginationHtml = `<div style="display: flex; justify-content: center; gap: 8px; margin-top: 16px;">`;
-        
+
         // 이전 버튼
         if (page > 1) {
             paginationHtml += `<button class="btn-secondary btn-sm" onclick="window.renderWeakSignalPage(${page - 1})"><i class="fa-solid fa-chevron-left"></i></button>`;
@@ -529,7 +529,7 @@ window.renderWeakSignalPage = function(page) {
         if (page < totalPages) {
             paginationHtml += `<button class="btn-secondary btn-sm" onclick="window.renderWeakSignalPage(${page + 1})"><i class="fa-solid fa-chevron-right"></i></button>`;
         }
-        
+
         paginationHtml += `</div>`;
         paginationContainer.innerHTML = paginationHtml;
     } else if (paginationContainer) {
@@ -538,7 +538,7 @@ window.renderWeakSignalPage = function(page) {
 };
 
 // Prophet 단일 키워드 예측 호출 및 백테스트 동시 실행
-window.fetchSingleKeywordForecast = async function(keyword) {
+window.fetchSingleKeywordForecast = async function (keyword) {
     const chartContainer = document.querySelector('.chart-container');
     if (chartContainer) {
         chartContainer.scrollIntoView({ behavior: 'smooth' });
@@ -549,7 +549,7 @@ window.fetchSingleKeywordForecast = async function(keyword) {
     const loading = document.getElementById('chart-loading');
     const loadingMsg = document.getElementById('loading-msg');
     const chartDiv = document.getElementById('trend-chart');
-    
+
     // 하단 백테스트 차트 DOM
     const btPlaceholder = document.getElementById('backtest-placeholder');
     const btLoading = document.getElementById('backtest-loading');
@@ -576,12 +576,12 @@ window.fetchSingleKeywordForecast = async function(keyword) {
     try {
         // 두 개의 API 병렬 호출
         const [predictResponse, evaluateResponse] = await Promise.all([
-            fetch('/api/predict-keyword', {
+            fetch(`${API_BASE_URL}/api/predict-keyword`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ keyword: keyword, forecastSteps: 30 })
             }),
-            fetch('/api/evaluate-keyword', {
+            fetch(`${API_BASE_URL}/api/evaluate-keyword`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ keyword: keyword })
@@ -648,9 +648,9 @@ window.fetchSingleKeywordForecast = async function(keyword) {
         if (chartDiv) chartDiv.style.opacity = '1';
         if (btLoading) btLoading.style.display = 'none';
         if (btChartDiv) btChartDiv.style.opacity = '1';
-        
+
         alert('서버와 통신하는 중 오류가 발생했습니다.');
-        
+
         if (placeholder) placeholder.style.display = 'flex';
         if (btPlaceholder) btPlaceholder.style.display = 'flex';
     }

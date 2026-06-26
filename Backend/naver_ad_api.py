@@ -5,6 +5,11 @@ import hashlib
 import base64
 import httpx
 from typing import List, Dict
+from dotenv import load_dotenv
+
+# Backend/key/.env 경로를 동적으로 지정하여 환경 변수 로드
+dotenv_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "key", ".env")
+load_dotenv(dotenv_path=dotenv_path)
 
 async def fetch_search_ad_volume(keywords: List[str]) -> Dict[str, float]:
     """
