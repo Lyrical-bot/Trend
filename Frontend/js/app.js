@@ -20,9 +20,84 @@ document.addEventListener('DOMContentLoaded', () => {
         apiStatusBanner.querySelector('p').innerHTML = '현재 로컬 html 파일을 직접 열었습니다. API 서버(127.0.0.1:8000)가 정상 구동 중이면 원격 데이터 분석이 가능합니다.';
     }
 
+    // 검색 및 기상청 데이터 상태 캐싱용 전역 객체 바인딩
+    window.currentPredictResults = null;
+    window.currentWeatherData = null;
+
     const chartLoading = document.getElementById('chart-loading');
     const chartPlaceholder = document.getElementById('chart-placeholder');
     const summaryCardsContainer = document.getElementById('summary-cards-container');
+
+    // 모든 날짜 선택 상자(Input Box) 클릭 시 달력 피커 자동 팝업
+    const dateInputs = document.querySelectorAll('input[type="date"]');
+    dateInputs.forEach(input => {
+        input.style.cursor = 'pointer';
+        input.addEventListener('click', function() {
+            if (typeof this.showPicker === 'function') {
+                try {
+                    this.showPicker();
+                } catch (e) {
+                    console.warn("showPicker failed:", e);
+                }
+            }
+        });
+    });
+
+    // 기상청 체크박스 옵션 리스너
+    const chkTemp = document.getElementById('chk-weather-temp');
+    const chkRain = document.getElementById('chk-weather-rain');
+    
+    function updateChartWithWeather() {
+        if (!window.currentPredictResults || !window.trendChartHelper) return;
+        const showTemp = chkTemp ? chkTemp.checked : false;
+        const showRain = chkRain ? chkRain.checked : false;
+        window.trendChartHelper.renderChart(
+            window.currentPredictResults,
+            false,
+            window.currentWeatherData,
+            showTemp,
+            showRain
+        );
+    }
+
+    if (chkTemp) chkTemp.addEventListener('change', updateChartWithWeather);
+    if (chkRain) chkRain.addEventListener('change', updateChartWithWeather);
+
+    // 줌 인/아웃 버튼 이벤트 리스너 바인딩
+    const btnZoomIn = document.getElementById('btn-zoom-in');
+    const btnZoomOut = document.getElementById('btn-zoom-out');
+    if (btnZoomIn) {
+        btnZoomIn.addEventListener('click', () => {
+            if (window.trendChartHelper) {
+                window.trendChartHelper.zoom('in');
+            }
+        });
+    }
+    if (btnZoomOut) {
+        btnZoomOut.addEventListener('click', () => {
+            if (window.trendChartHelper) {
+                window.trendChartHelper.zoom('out');
+            }
+        });
+    }
+
+    // 백테스트 검증 차트 줌 인/아웃 버튼 이벤트 리스너 바인딩
+    const btnBtZoomIn = document.getElementById('btn-bt-zoom-in');
+    const btnBtZoomOut = document.getElementById('btn-bt-zoom-out');
+    if (btnBtZoomIn) {
+        btnBtZoomIn.addEventListener('click', () => {
+            if (window.backtestChartHelper) {
+                window.backtestChartHelper.zoom('in');
+            }
+        });
+    }
+    if (btnBtZoomOut) {
+        btnBtZoomOut.addEventListener('click', () => {
+            if (window.backtestChartHelper) {
+                window.backtestChartHelper.zoom('out');
+            }
+        });
+    }
     const reportSection = document.getElementById('report-section');
     const reportModelDesc = document.getElementById('report-model-desc');
     const reportInsights = document.getElementById('report-insights');
@@ -38,13 +113,13 @@ document.addEventListener('DOMContentLoaded', () => {
     // 페이지 로드 시 랭킹 및 Weak Signal 자동 로드
     fetchVelocityRanking();
 
-    // 2. 초기 기본값 설정 (조회 기간: 과거 1년 ~ 오늘)
+    // 2. 초기 기본값 설정 (조회 기간: 과거 10년 ~ 오늘)
     const today = new Date();
-    const oneYearAgo = new Date();
-    oneYearAgo.setFullYear(today.getFullYear() - 1);
+    const tenYearsAgo = new Date();
+    tenYearsAgo.setFullYear(today.getFullYear() - 10);
 
     endDateInput.value = formatDate(today);
-    startDateInput.value = formatDate(oneYearAgo);
+    startDateInput.value = formatDate(tenYearsAgo);
 
     // 3. 필터 아코디언 토글 이벤트
     filterAccordionToggle.addEventListener('click', () => {
@@ -138,6 +213,13 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
 
+        // 로딩 메시지에 사용자 입력 키워드 동적 매핑
+        const loadingMsg = document.getElementById('loading-msg');
+        if (loadingMsg && payload.keywordGroups.length > 0) {
+            const firstGroup = payload.keywordGroups[0];
+            loadingMsg.innerHTML = `<strong>${firstGroup.groupName}</strong> 과거 데이터 수집 및 머신러닝 예측을 수행하는 중...`;
+        }
+
         // 세부 필터 파싱
         const device = document.querySelector('input[name="device"]:checked').value;
         const gender = document.querySelector('input[name="gender"]:checked').value;
@@ -164,6 +246,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // 성공 처리
             chartLoading.style.display = 'none';
+            chartPlaceholder.style.display = 'none';
 
             // 네이버 API 연동 상태 배너 업데이트 (정상 연결 확인)
             apiStatusBanner.className = 'glass-card api-alert api-ok';
@@ -171,8 +254,14 @@ document.addEventListener('DOMContentLoaded', () => {
             apiStatusBanner.querySelector('h4').textContent = '네이버 API 연동 성공';
             apiStatusBanner.querySelector('p').textContent = '데이터가 안정적으로 연결되어 시계열 예측 처리가 완수되었습니다.';
 
-            // 1. 차트 렌더링
-            chartHelper.renderChart(data.results);
+            // 기상청 데이터와 트렌드 결과 캐싱
+            window.currentPredictResults = data.results;
+            window.currentWeatherData = data.weather;
+
+            // 1. 차트 렌더링 (기상청 오버레이 체크 여부 전달)
+            const showTemp = chkTemp ? chkTemp.checked : false;
+            const showRain = chkRain ? chkRain.checked : false;
+            window.trendChartHelper.renderChart(data.results, false, data.weather, showTemp, showRain);
 
             // 2. 요약 카드 동적 렌더링
             renderSummaryCards(data.results, payload.timeUnit);
@@ -596,12 +685,20 @@ window.fetchSingleKeywordForecast = async function (keyword) {
         if (chartDiv) chartDiv.style.opacity = '1';
 
         if (predictResponse.ok && window.trendChartHelper) {
-            window.trendChartHelper.renderChart([{
+            const formattedResults = [{
                 title: predictResult.keyword,
                 keywords: [predictResult.keyword],
                 data: predictResult.data,
                 signals: predictResult.signals || []
-            }], false);
+            }];
+            // 캐싱 등록
+            window.currentPredictResults = formattedResults;
+            window.currentWeatherData = predictResult.weather;
+
+            const showTemp = document.getElementById('chk-weather-temp') ? document.getElementById('chk-weather-temp').checked : false;
+            const showRain = document.getElementById('chk-weather-rain') ? document.getElementById('chk-weather-rain').checked : false;
+
+            window.trendChartHelper.renderChart(formattedResults, false, predictResult.weather, showTemp, showRain);
         } else {
             alert(`예측 실패: ${predictResult.detail || predictResult.error || '알 수 없는 오류'}`);
             if (placeholder) placeholder.style.display = 'flex';

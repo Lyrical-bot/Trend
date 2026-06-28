@@ -2,16 +2,22 @@ class TrendChartHelper {
     constructor(containerId) {
         this.containerId = containerId;
         this.chart = null;
-        // 그룹별 고유 컬러 팔레트 (Mint, Purple, Coral)
-        this.colors = ['#1abc9c', '#6b52ff', '#ef4444'];
-        this.colorsFade = ['rgba(26, 188, 156, 0.25)', 'rgba(107, 82, 255, 0.25)', 'rgba(239, 68, 68, 0.25)'];
+        // 그룹별 고유 컬러 팔레트 (Naver Bright Green, Purple, Coral)
+        this.colors = ['#02e06b', '#6b52ff', '#ef4444'];
+        this.colorsFade = ['rgba(2, 224, 107, 0.25)', 'rgba(107, 82, 255, 0.25)', 'rgba(239, 68, 68, 0.25)'];
+        
+        // 줌 컨트롤러 상태값
+        this.absoluteMin = null;
+        this.absoluteMax = null;
+        this.currentMin = null;
+        this.currentMax = null;
     }
 
     /**
      * 네이버 API 가공 데이터를 기반으로 차트를 그립니다.
      * results: [{ title, keywords, data: [{ period, ratio, isForecast, type }] }]
      */
-    renderChart(results, isBacktest = false) {
+    renderChart(results, isBacktest = false, weatherData = null, showTemp = false, showRain = false) {
         if (this.chart) {
             this.chart.destroy();
         }
@@ -30,6 +36,23 @@ class TrendChartHelper {
             allPeriods = Array.from(new Set(results[0].data.map(item => item.period))).sort();
         }
 
+        // --- 4개월 디폴트 줌 기간 계산 ---
+        let defaultMin = null;
+        let defaultMax = null;
+        if (allPeriods.length > 0) {
+            const maxTime = new Date(allPeriods[allPeriods.length - 1]).getTime();
+            const minTime = maxTime - (120 * 24 * 60 * 60 * 1000); // 120일 전 (4개월)
+            const absoluteMinTime = new Date(allPeriods[0]).getTime();
+
+            this.absoluteMin = absoluteMinTime;
+            this.absoluteMax = maxTime;
+            this.currentMin = Math.max(absoluteMinTime, minTime);
+            this.currentMax = maxTime;
+
+            defaultMin = this.currentMin;
+            defaultMax = this.currentMax;
+        }
+
         results.forEach((group, index) => {
             const color = this.colors[index % this.colors.length];
             const fadeColor = this.colorsFade[index % this.colorsFade.length];
@@ -39,33 +62,33 @@ class TrendChartHelper {
             const forecastColor = '#1abc9c';
             const signalColor = '#ef4444';
 
-            signals.forEach(signal => {
-                const point = group.data.find(item => item.period === signal.date && !item.isForecast);
-                if (!point) return;
-
-                signalAnnotations.push({
-                    x: signal.date,
-                    y: point.ratio,
-                    marker: {
-                        size: 7,
-                        fillColor: signalColor,
-                        strokeColor: '#ffffff',
-                        strokeWidth: 2,
-                        radius: 2
-                    },
-                    label: {
-                        borderColor: signalColor,
-                        offsetY: 0,
-                        style: {
-                            color: '#ffffff',
-                            background: signalColor,
-                            fontSize: '11px',
-                            fontWeight: 700
-                        },
-                        text: `${signal.label || '유행 전조'} ${signal.score || ''}점`
-                    }
-                });
-            });
+            // signals.forEach(signal => {
+            //     const point = group.data.find(item => item.period === signal.date && !item.isForecast);
+            //     if (!point) return;
+            // 
+            //     signalAnnotations.push({
+            //         x: signal.date,
+            //         y: point.ratio,
+            //         marker: {
+            //             size: 7,
+            //             fillColor: signalColor,
+            //             strokeColor: '#ffffff',
+            //             strokeWidth: 2,
+            //             radius: 2
+            //         },
+            //         label: {
+            //             borderColor: signalColor,
+            //             offsetY: 0,
+            //             style: {
+            //                 color: '#ffffff',
+            //                 background: signalColor,
+            //                 fontSize: '11px',
+            //                 fontWeight: 700
+            //             },
+            //             text: `${signal.label || '유행 전조'} ${signal.score || ''}점`
+            //         }
+            //     });
+            // });
 
             if (isBacktest) {
                 // 백테스트 모드: train(학습), actual(실제), predicted(예측) 3가지 라인
@@ -142,44 +165,7 @@ class TrendChartHelper {
                     return null;
                 });
 
-                // 신뢰구간 (상한/하한) 데이터 구성
-                const upperData = [];
-                const lowerData = [];
-                
-                allPeriods.forEach((p, idx) => {
-                    const item = group.data.find(d => d.period === p && d.isForecast);
-                    if (item && item.yhat_lower !== undefined && item.yhat_upper !== undefined) {
-                        upperData.push(item.yhat_upper);
-                        lowerData.push(item.yhat_lower);
-                    } else {
-                        // 연결부
-                        const aItem = group.data.find(d => d.period === p && !d.isForecast);
-                        const isNextFore = group.data.find(d => d.period === allPeriods[idx+1] && d.isForecast);
-                        if (aItem && isNextFore) {
-                            upperData.push(aItem.ratio);
-                            lowerData.push(aItem.ratio);
-                        } else {
-                            upperData.push(null);
-                            lowerData.push(null);
-                        }
-                    }
-                });
 
-                // 1. 예측 범위 (상한/하한 점선)
-                const hasConfidence = upperData.some(val => val !== null);
-                if (hasConfidence) {
-                    series.push({ name: `${group.title} (예측 상한)`, type: 'line', data: upperData });
-                    strokeDashArray.push(2);
-                    strokeColors.push(fadeColor);
-                    fillColors.push('transparent');
-                    markerSizes.push(0);
-
-                    series.push({ name: `${group.title} (예측 하한)`, type: 'line', data: lowerData });
-                    strokeDashArray.push(2);
-                    strokeColors.push(fadeColor);
-                    fillColors.push('transparent');
-                    markerSizes.push(0);
-                }
 
                 // 2. 과거 데이터
                 series.push({ name: `${group.title} (과거)`, type: 'line', data: actualData });
@@ -212,6 +198,33 @@ class TrendChartHelper {
             }
         });
 
+        // 4. 날씨 정보 체크에 따른 series 추가 (CORS 및 이중 Y축 오버레이 데이터 연동)
+        if (weatherData && weatherData.length > 0) {
+            if (showTemp) {
+                const tempData = allPeriods.map(p => {
+                    const wItem = weatherData.find(w => w.period === p);
+                    return wItem ? wItem.avgTa : null;
+                });
+                series.push({ name: "평균 기온 (°C)", type: 'line', data: tempData });
+                strokeDashArray.push(0);
+                strokeColors.push('#ef4444'); // 기온은 연한 빨강
+                fillColors.push('#ef4444');
+                markerSizes.push(0);
+            }
+
+            if (showRain) {
+                const rainData = allPeriods.map(p => {
+                    const wItem = weatherData.find(w => w.period === p);
+                    return wItem ? wItem.sumRn : null;
+                });
+                series.push({ name: "일강수량 (mm)", type: 'bar', data: rainData });
+                strokeDashArray.push(0);
+                strokeColors.push('#3b82f6'); // 강수량은 연한 파랑
+                fillColors.push('rgba(59, 130, 246, 0.4)');
+                markerSizes.push(0);
+            }
+        }
+
         const options = {
             series: series,
             chart: {
@@ -219,7 +232,7 @@ class TrendChartHelper {
                 height: 380,
                 background: 'transparent',
                 toolbar: {
-                    show: true,
+                    show: false,
                     tools: {
                         download: true,
                         selection: false,
@@ -229,6 +242,17 @@ class TrendChartHelper {
                         pan: false,
                         reset: true
                     }
+                },
+                zoom: {
+                    enabled: false
+                },
+                dropShadow: {
+                    enabled: true,
+                    top: 6,
+                    left: 0,
+                    blur: 6,
+                    color: strokeColors.length > 0 ? strokeColors[0] : '#6b52ff',
+                    opacity: 0.18
                 },
                 animations: {
                     enabled: true,
@@ -248,9 +272,10 @@ class TrendChartHelper {
             stroke: {
                 curve: 'smooth',
                 width: series.map(s => {
-                    if (s.name.includes('상한') || s.name.includes('하한')) return 1;
+                    if (s.name.includes('평균 기온')) return 2;
+                    if (s.name.includes('일강수량')) return 1.5;
                     if (s.name.includes('유행 전조')) return 0;
-                    return 3;
+                    return 4.5; // 네이버 트렌드 및 예측 실선/점선을 4.5px로 극대화
                 }),
                 dashArray: strokeDashArray
             },
@@ -285,6 +310,8 @@ class TrendChartHelper {
             xaxis: {
                 type: 'datetime',
                 categories: allPeriods,
+                min: defaultMin,
+                max: defaultMax,
                 labels: {
                     style: {
                         colors: '#6b7280',
@@ -304,43 +331,129 @@ class TrendChartHelper {
                     color: 'rgba(0, 0, 0, 0.1)'
                 }
             },
-            yaxis: {
-                min: 0,
-                tickAmount: 5,
-                labels: {
-                    style: {
-                        colors: '#6b7280',
-                        fontSize: '11px'
-                    },
-                    formatter: function(val) {
-                        return val.toFixed(0);
-                    }
+            yaxis: (() => {
+                let yaxisConfig = [];
+                
+                // 검색어 트렌드 시리즈 개수 파악
+                const primarySeriesCount = series.filter(s => s.name !== "평균 기온 (°C)" && s.name !== "일강수량 (mm)").length;
+                
+                for (let i = 0; i < primarySeriesCount; i++) {
+                    yaxisConfig.push({
+                        show: i === 0,
+                        min: 0,
+                        tickAmount: 5,
+                        labels: {
+                            style: {
+                                colors: '#6b7280',
+                                fontSize: '11px'
+                            },
+                            formatter: function(val) {
+                                return val !== null && val !== undefined ? val.toFixed(0) : '';
+                            }
+                        },
+                        title: i === 0 ? {
+                            text: "검색량 / 트렌드 비율",
+                            style: {
+                                color: '#6b7280',
+                                fontWeight: 600
+                            }
+                        } : undefined
+                    });
                 }
-            },
+                
+                // 기온 Y축 (우측)
+                if (showTemp) {
+                    yaxisConfig.push({
+                        opposite: true,
+                        seriesName: "평균 기온 (°C)",
+                        min: -15,
+                        max: 40,
+                        tickAmount: 5,
+                        title: {
+                            text: "평균 기온 (°C)",
+                            style: {
+                                color: '#ef4444',
+                                fontWeight: 600
+                            }
+                        },
+                        labels: {
+                            style: {
+                                colors: '#ef4444',
+                                fontSize: '11px'
+                            },
+                            formatter: function(val) {
+                                return val !== null && val !== undefined ? `${val.toFixed(1)}°C` : '';
+                            }
+                        }
+                    });
+                }
+                
+                // 강수량 Y축 (우측)
+                if (showRain) {
+                    yaxisConfig.push({
+                        opposite: true,
+                        seriesName: "일강수량 (mm)",
+                        min: 0,
+                        max: 100,
+                        tickAmount: 5,
+                        title: {
+                            text: "일강수량 (mm)",
+                            style: {
+                                color: '#3b82f6',
+                                fontWeight: 600
+                            }
+                        },
+                        labels: {
+                            style: {
+                                colors: '#3b82f6',
+                                fontSize: '11px'
+                            },
+                            formatter: function(val) {
+                                return val !== null && val !== undefined ? `${val.toFixed(0)}mm` : '';
+                            }
+                        }
+                    });
+                }
+                
+                return yaxisConfig;
+            })(),
             tooltip: {
                 shared: true,
                 intersect: false,
                 custom: function({series, seriesIndex, dataPointIndex, w}) {
                     const data = w.globals.initialSeries;
-                    let category = w.globals.categoryLabels[dataPointIndex] || w.globals.labels[dataPointIndex];
+                    let rawTime = (w.globals.seriesX && w.globals.seriesX[0]) ? w.globals.seriesX[0][dataPointIndex] : null;
+                    let category = rawTime || w.globals.categoryLabels[dataPointIndex] || w.globals.labels[dataPointIndex];
                     
-                    if (typeof category === 'number' || (typeof category === 'string' && !isNaN(new Date(category).getTime()))) {
+                    if (category && (typeof category === 'number' || (typeof category === 'string' && !isNaN(new Date(category).getTime())))) {
                         const d = new Date(category);
-                        category = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+                        category = `${d.getFullYear()}년 ${String(d.getMonth()+1).padStart(2,'0')}월 ${String(d.getDate()).padStart(2,'0')}일`;
                     }
                     
                     let html = `<div style="padding: 12px; background: rgba(255, 255, 255, 0.97); border: 1px solid #e5e7eb; border-radius: 8px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05), 0 2px 4px -1px rgba(0,0,0,0.03); backdrop-filter: blur(4px);">`;
                     html += `<div style="margin-bottom: 10px; font-weight: 700; color: #6b7280; font-size: 12px;">${category}</div>`;
                     
                     data.forEach((s, idx) => {
-                        const val = s.data[dataPointIndex];
+                        let val = w.globals.series[idx] ? w.globals.series[idx][dataPointIndex] : null;
+                        if (val === null || val === undefined) {
+                            val = s.data[dataPointIndex];
+                        }
                         if (val !== null && val !== undefined) {
                             const color = w.config.colors[idx] || '#111827';
+                            let unit = '건';
+                            let formattedVal = (typeof val === 'number') ? val.toFixed(0) : val;
+                            
+                            if (s.name.includes('기온')) {
+                                unit = '°C';
+                                formattedVal = (typeof val === 'number') ? val.toFixed(1) : val;
+                            } else if (s.name.includes('강수량')) {
+                                unit = 'mm';
+                            }
                             
                             html += `<div style="display: flex; align-items: center; margin-bottom: 6px;">
                                 <span style="display: inline-block; width: 10px; height: 10px; border-radius: 50%; background-color: ${color}; margin-right: 8px; box-shadow: 0 0 0 1px rgba(0,0,0,0.05);"></span>
                                 <span style="font-size: 13px; color: #111827; margin-right: 16px;">${s.name}</span>
-                                <span style="font-weight: 700; font-size: 13px; color: #111827; margin-left: auto;">${val.toFixed(0)}건</span>
+                                <span style="font-weight: 700; font-size: 13px; color: #111827; margin-left: auto;">${formattedVal}${unit}</span>
                             </div>`;
                         }
                     });
@@ -356,5 +469,41 @@ class TrendChartHelper {
 
         this.chart = new ApexCharts(document.querySelector(`#${this.containerId}`), options);
         this.chart.render();
+    }
+
+    /**
+     * 차트 가로축의 줌 영역을 확대(In) 또는 축소(Out) 처리합니다.
+     * direction: 'in' | 'out'
+     */
+    zoom(direction) {
+        if (!this.chart || !this.currentMin || !this.currentMax || !this.absoluteMin || !this.absoluteMax) {
+            console.warn("차트가 준비되지 않았거나 줌 상태값이 없습니다.");
+            return;
+        }
+
+        const currentSpan = this.currentMax - this.currentMin;
+        let newSpan = currentSpan;
+
+        if (direction === 'in') {
+            // 확대: 보여주는 구간(Span)을 절반으로 단축 (최소 7일 제한)
+            newSpan = Math.max(7 * 24 * 60 * 60 * 1000, currentSpan / 2);
+        } else if (direction === 'out') {
+            // 축소: 보여주는 구간(Span)을 2배로 확장 (최대 전체 범위 제한)
+            newSpan = Math.min(this.absoluteMax - this.absoluteMin, currentSpan * 2);
+        }
+
+        // 사용자가 집중하는 우측 영역(미래 예측 끝점)을 기준으로 좌측 범위를 동적 가감
+        let newMin = this.absoluteMax - newSpan;
+        let newMax = this.absoluteMax;
+
+        if (newMin < this.absoluteMin) {
+            newMin = this.absoluteMin;
+        }
+
+        this.currentMin = newMin;
+        this.currentMax = newMax;
+
+        // ApexCharts zoomX API 호출
+        this.chart.zoomX(newMin, newMax);
     }
 }

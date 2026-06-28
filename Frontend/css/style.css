@@ -82,12 +82,12 @@ body {
     padding-left: 1.5rem;
 }
 
-/* Main Grid Layout */
+/* Main Grid Layout (가로폭 한계를 늘려 반응형 리사이징 보강) */
 .main-grid {
     display: grid;
     grid-template-columns: 350px 1fr;
     gap: 1.5rem;
-    max-width: 1400px;
+    max-width: 98%;
     margin: 1.5rem auto;
     width: 100%;
     padding: 0 1.5rem;
