@@ -2,6 +2,15 @@ import os
 import httpx
 from dotenv import load_dotenv
 from typing import List, Dict, Any, Optional
+import json
+import hashlib
+from datetime import datetime
+import sys
+
+# Ensure sns_sensing is importable from Backend/naver_api.py
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from sns_sensing.database.db import SessionLocal
+from sns_sensing.models.models import ApiCache
 
 # Backend/key/.env 경로를 동적으로 지정하여 환경 변수 로드
 dotenv_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env")
@@ -48,6 +57,26 @@ async def fetch_naver_trend(
     if ages:
         body["ages"] = ages
 
+    # --- DB Caching Logic Start ---
+    request_hash_str = json.dumps(body, sort_keys=True)
+    request_hash = hashlib.sha256(request_hash_str.encode('utf-8')).hexdigest()
+    date_key = datetime.now().strftime("%Y-%m-%d")
+    
+    db = SessionLocal()
+    try:
+        cached_record = db.query(ApiCache).filter(
+            ApiCache.api_name == "naver_trend",
+            ApiCache.request_hash == request_hash,
+            ApiCache.date_key == date_key
+        ).first()
+        
+        if cached_record:
+            print("[Info] 캐시된 네이버 트렌드 API 데이터를 불러옵니다.")
+            return json.loads(cached_record.response_data)
+    finally:
+        db.close()
+    # --- DB Caching Logic End ---
+
     import asyncio
     
     async with httpx.AsyncClient() as client:
@@ -56,7 +85,24 @@ async def fetch_naver_trend(
             try:
                 response = await client.post(NAVER_API_URL, json=body, headers=headers, timeout=20.0)
                 if response.status_code == 200:
-                    return response.json()
+                    res_json = response.json()
+                    # --- DB Caching Save Start ---
+                    db = SessionLocal()
+                    try:
+                        new_cache = ApiCache(
+                            api_name="naver_trend",
+                            request_hash=request_hash,
+                            date_key=date_key,
+                            response_data=json.dumps(res_json, ensure_ascii=False)
+                        )
+                        db.add(new_cache)
+                        db.commit()
+                    except Exception as e:
+                        print(f"[Warning] 캐시 저장 실패: {e}")
+                    finally:
+                        db.close()
+                    # --- DB Caching Save End ---
+                    return res_json
                 # 429 (Too Many Requests) 또는 403 (Forbidden, 한도초과 등) 발생 시 예비 키로 Fallback
                 elif response.status_code in [429, 403] and NAVER_CLIENT_ID2 and NAVER_CLIENT_SECRET2:
                     print(f"[Info] 메인 네이버 API 키 오류({response.status_code}). 예비 키(Key 2)로 재시도합니다...")
@@ -67,7 +113,22 @@ async def fetch_naver_trend(
                     }
                     response2 = await client.post(NAVER_API_URL, json=body, headers=headers_fallback, timeout=20.0)
                     if response2.status_code == 200:
-                        return response2.json()
+                        res_json2 = response2.json()
+                        db = SessionLocal()
+                        try:
+                            new_cache = ApiCache(
+                                api_name="naver_trend",
+                                request_hash=request_hash,
+                                date_key=date_key,
+                                response_data=json.dumps(res_json2, ensure_ascii=False)
+                            )
+                            db.add(new_cache)
+                            db.commit()
+                        except Exception as e:
+                            pass
+                        finally:
+                            db.close()
+                        return res_json2
                     else:
                         error_msg = f"네이버 API 예비 키 호출 실패 (상태 코드: {response2.status_code}): {response2.text}"
                         raise Exception(error_msg)
@@ -93,8 +154,10 @@ async def fetch_datalab_top_keywords(
     import asyncio
     
     url = "https://datalab.naver.com/shoppingInsight/getCategoryKeywordRank.naver"
-    end_date_str = datetime.now().strftime("%Y-%m-%d")
-    start_date_str = (datetime.now() - timedelta(days=days_ago)).strftime("%Y-%m-%d")
+    # 안정적인 데이터 조회를 위해 '오늘'이 아닌 완전히 마감된 '어제'를 기준으로 삼습니다.
+    end_date = datetime.now() - timedelta(days=1)
+    end_date_str = end_date.strftime("%Y-%m-%d")
+    start_date_str = (end_date - timedelta(days=days_ago)).strftime("%Y-%m-%d")
     
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
@@ -103,6 +166,27 @@ async def fetch_datalab_top_keywords(
         'X-Requested-With': 'XMLHttpRequest'
     }
     
+    # --- DB Caching Logic Start ---
+    request_params = {"cid": cid, "count": count, "days_ago": days_ago}
+    request_hash_str = json.dumps(request_params, sort_keys=True)
+    request_hash = hashlib.sha256(request_hash_str.encode('utf-8')).hexdigest()
+    date_key = datetime.now().strftime("%Y-%m-%d")
+    
+    db = SessionLocal()
+    try:
+        cached_record = db.query(ApiCache).filter(
+            ApiCache.api_name == "naver_datalab_top",
+            ApiCache.request_hash == request_hash,
+            ApiCache.date_key == date_key
+        ).first()
+        
+        if cached_record:
+            print("[Info] 캐시된 네이버 데이터랩 탑 키워드 데이터를 불러옵니다.")
+            return json.loads(cached_record.response_data)
+    finally:
+        db.close()
+    # --- DB Caching Logic End ---
+
     all_keywords = []
     # 최대 페이지 수 계산 (한 페이지당 20개)
     pages = (count + 19) // 20
@@ -123,7 +207,27 @@ async def fetch_datalab_top_keywords(
                     print(f"[Warning] 인기검색어 조회 실패 (상태 코드 {response.status_code}) - page {p}: {response.text[:100]}")
                     break
                 await asyncio.sleep(0.1) # Rate limit 방어
-            return all_keywords[:count]
+            
+            # --- DB Caching Save Start ---
+            result_keywords = all_keywords[:count]
+            db = SessionLocal()
+            try:
+                new_cache = ApiCache(
+                    api_name="naver_datalab_top",
+                    request_hash=request_hash,
+                    date_key=date_key,
+                    response_data=json.dumps(result_keywords, ensure_ascii=False)
+                )
+                db.add(new_cache)
+                db.commit()
+            except Exception as e:
+                pass
+            finally:
+                db.close()
+            # --- DB Caching Save End ---
+            
+            return result_keywords
+
         except Exception as e:
             print(f"[Error] 인기검색어 스크래핑 중 예외 발생: {e}")
             return all_keywords[:count]
