@@ -81,9 +81,13 @@ def init_scheduler():
     print("백그라운드 스케줄러가 시작되었습니다. (주기: 식품 6시간, 유튜브 3시간)")
     
     # 만약 캐시 파일이 없다면 서버 시작 시 즉시 백그라운드로 1회 실행 트리거
+    import threading
+    
     if not os.path.exists(WEAK_SIGNALS_CACHE) or not os.path.exists(VELOCITY_CACHE):
-        print("초기 캐시 데이터가 없습니다. 즉시 수집을 시작합니다...")
-        # 백그라운드 스레드에서 실행되도록 asyncio 래퍼를 씀
-        import threading
-        t = threading.Thread(target=sync_run_food_collection_job)
-        t.start()
+        print("초기 캐시 데이터가 없습니다. 식품 데이터 수집을 즉시 시작합니다...")
+        t1 = threading.Thread(target=sync_run_food_collection_job)
+        t1.start()
+        
+    print("유튜브 트렌드 수집기(SNS Sensing) 1회차 즉시 가동을 시작합니다...")
+    t2 = threading.Thread(target=run_pipeline)
+    t2.start()

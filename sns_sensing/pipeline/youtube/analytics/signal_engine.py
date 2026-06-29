@@ -50,10 +50,9 @@ def calculate_burst(db: Session, keyword: str, current_time: datetime) -> float:
     
     return float(recent_count)
 
-def calculate_channel_diversity(db: Session, keyword: str) -> float:
+def calculate_channel_diversity(db: Session, keyword: str) -> dict:
     """
     채널 다양성(Channel Diversity)을 계산합니다.
-    diversity = unique_channel / video_count
     """
     stats = db.query(
         func.count(func.distinct(Video.channel_id)).label('unique_channels'),
@@ -66,17 +65,23 @@ def calculate_channel_diversity(db: Session, keyword: str) -> float:
     total_videos = stats.total_videos or 0
 
     if total_videos == 0:
-        return 0.0
-
-    diversity = unique_channels / total_videos
-    return round(diversity, 4)
+        diversity = 0.0
+    else:
+        diversity = unique_channels / total_videos
+        
+    return {
+        "unique_channels": unique_channels,
+        "diversity_ratio": round(diversity, 4)
+    }
 
 def calculate_all_signals(db: Session, keyword: str, current_time: datetime) -> dict:
     """
     모든 핵심 지표를 종합하여 반환합니다.
     """
+    diversity_data = calculate_channel_diversity(db, keyword)
     return {
         "growth": calculate_growth(db, keyword, current_time),
         "burst": calculate_burst(db, keyword, current_time),
-        "channel_diversity": calculate_channel_diversity(db, keyword)
+        "channel_diversity": diversity_data["diversity_ratio"],
+        "unique_channels": diversity_data["unique_channels"]
     }
