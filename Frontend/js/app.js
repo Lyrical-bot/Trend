@@ -815,16 +815,89 @@ window.fetchSnsTrend = async function() {
                 elBurst.style.color = b >= 3 ? "#ef4444" : "#f97316";
             }
             
-            // Diversity
+            // Diversity (Unique Channels)
             const elDiv = document.getElementById('sns-metric-diversity');
             if (elDiv) {
-                const d = signals.channel_diversity || 0;
-                elDiv.textContent = `${d}`;
-                elDiv.style.color = d >= 0.8 ? "#10b981" : (d >= 0.5 ? "#3b82f6" : "#ef4444");
+                const unique_channels = signals.unique_channels || 0;
+                const d = signals.channel_diversity || 0; // fallback if needed
+                
+                if (unique_channels > 0) {
+                    elDiv.textContent = `${unique_channels}개 채널`;
+                    elDiv.style.color = unique_channels >= 3 ? "#10b981" : (unique_channels >= 2 ? "#3b82f6" : "#ef4444");
+                } else {
+                    elDiv.textContent = `${d}`;
+                    elDiv.style.color = d >= 0.8 ? "#10b981" : (d >= 0.5 ? "#3b82f6" : "#ef4444");
+                }
             }
         }
 
-        // 2. 타임라인 차트 렌더링
+        // 2. 교차 검증(블루오션 판별) API 호출
+        const trendSynContainer = document.getElementById('trend-synthesis-container');
+        const phaseEl = document.getElementById('trend-synthesis-phase');
+        const msgEl = document.getElementById('trend-synthesis-msg');
+        const badgeEl = document.getElementById('trend-synthesis-badge');
+        
+        if (trendSynContainer) {
+            trendSynContainer.style.display = 'block';
+            phaseEl.textContent = '상태 판별 중...';
+            phaseEl.style.color = 'var(--text-primary)';
+            msgEl.textContent = '네이버 대중 검색량과 유튜브 확산 지표를 교차 분석하고 있습니다.';
+            badgeEl.textContent = '분석중';
+            badgeEl.style.background = '#e5e7eb';
+            badgeEl.style.color = '#6b7280';
+            trendSynContainer.style.borderLeftColor = '#3b82f6';
+            trendSynContainer.style.background = 'rgba(59, 130, 246, 0.05)';
+            
+            try {
+                const synRes = await fetch(`${API_BASE_URL}/api/trend-synthesis?keyword=${encodeURIComponent(keyword)}`);
+                if (synRes.ok) {
+                    const synData = await synRes.json();
+                    const phase = synData.phase;
+                    
+                    if (phase === 'GOLDEN_TIME') {
+                        phaseEl.textContent = '🚀 MD 골든타임 (블루오션)';
+                        phaseEl.style.color = '#10b981'; // Green
+                        badgeEl.textContent = '추천';
+                        badgeEl.style.background = '#10b981';
+                        badgeEl.style.color = 'white';
+                        trendSynContainer.style.borderLeftColor = '#10b981';
+                        trendSynContainer.style.background = 'rgba(16, 185, 129, 0.05)';
+                    } else if (phase === 'RED_OCEAN') {
+                        phaseEl.textContent = '🔥 대중 확산기 (레드오션 진입)';
+                        phaseEl.style.color = '#ef4444'; // Red
+                        badgeEl.textContent = '주의';
+                        badgeEl.style.background = '#ef4444';
+                        badgeEl.style.color = 'white';
+                        trendSynContainer.style.borderLeftColor = '#ef4444';
+                        trendSynContainer.style.background = 'rgba(239, 68, 68, 0.05)';
+                    } else if (phase === 'LATE_STAGE') {
+                        phaseEl.textContent = '🥀 유행 끝물 (위험)';
+                        phaseEl.style.color = '#6b7280'; // Gray
+                        badgeEl.textContent = '위험';
+                        badgeEl.style.background = '#6b7280';
+                        badgeEl.style.color = 'white';
+                        trendSynContainer.style.borderLeftColor = '#6b7280';
+                        trendSynContainer.style.background = 'rgba(107, 114, 128, 0.05)';
+                    } else {
+                        phaseEl.textContent = '👀 관망 구간';
+                        phaseEl.style.color = '#3b82f6'; // Blue
+                        badgeEl.textContent = '관망';
+                        badgeEl.style.background = '#3b82f6';
+                        badgeEl.style.color = 'white';
+                        trendSynContainer.style.borderLeftColor = '#3b82f6';
+                        trendSynContainer.style.background = 'rgba(59, 130, 246, 0.05)';
+                    }
+                    
+                    msgEl.textContent = synData.message;
+                }
+            } catch(e) {
+                console.error("Trend Synthesis API Error:", e);
+                phaseEl.textContent = '분석 실패';
+                msgEl.textContent = '교차 분석 데이터를 불러오는 중 오류가 발생했습니다.';
+            }
+        }
+
+        // 3. 타임라인 차트 렌더링
         if (chartDiv) {
             chartDiv.style.display = 'block';
             
