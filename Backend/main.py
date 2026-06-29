@@ -163,11 +163,12 @@ async def predict_trend(payload: PredictRequest):
                     "isForecast": False
                 })
 
-            # 시계열 예측 모델 수행
+            # 시계열 예측 모델 수행 (기상 데이터 결합)
             forecasted, summary = forecast_trend(
                 historical_data=historical,
                 time_unit=payload.timeUnit,
-                forecast_steps=payload.forecastSteps
+                forecast_steps=payload.forecastSteps,
+                weather_data=weather_data
             )
 
             # --- 전조 감지: 스케일링 적용 전에 원본 비율값(0~100)으로 수행 ---
@@ -282,7 +283,7 @@ async def predict_single_keyword(payload: PredictKeywordRequest):
         from datetime import datetime, timedelta
         
         end_date = datetime.now()
-        start_date = end_date - timedelta(days=3652)
+        start_date = end_date - timedelta(days=720)
         start_date_str = start_date.strftime("%Y-%m-%d")
         end_date_str = end_date.strftime("%Y-%m-%d")
         
@@ -297,8 +298,11 @@ async def predict_single_keyword(payload: PredictKeywordRequest):
             time_unit="date",
             keyword_groups=[{"groupName": payload.keyword, "keywords": [payload.keyword]}]
         )
+        
+        # 기상청 날씨 데이터는 API 서버 부하 방지 및 성능 최적화를 위해 최근 2년치(730일)만 수집하도록 변경
+        weather_start_date_str = (end_date - timedelta(days=2 * 365)).strftime("%Y-%m-%d")
         weather_task = fetch_weather_data(
-            start_date=start_date_str,
+            start_date=weather_start_date_str,
             end_date=end_date_str
         )
         
@@ -321,7 +325,8 @@ async def predict_single_keyword(payload: PredictKeywordRequest):
         forecasted, summary = forecast_trend(
             historical_data=historical,
             time_unit="date",
-            forecast_steps=payload.forecastSteps
+            forecast_steps=payload.forecastSteps,
+            weather_data=weather_data
         )
 
         # --- 전조 감지: 스케일링 적용 전에 원본 비율값(0~100)으로 수행 ---
@@ -368,12 +373,21 @@ async def evaluate_single_keyword(payload: PredictKeywordRequest):
         ad_volumes = await fetch_search_ad_volume([payload.keyword])
         group_monthly_volume = ad_volumes.get(payload.keyword, 0.0)
 
-        naver_response = await fetch_naver_trend(
+        import asyncio
+
+        # 백테스트 학습 구간에 대응하는 10년치 기상 정보 병렬 수집
+        naver_task = fetch_naver_trend(
             start_date=start_date_str,
             end_date=end_date_str,
             time_unit="date",
             keyword_groups=[{"groupName": payload.keyword, "keywords": [payload.keyword]}]
         )
+        weather_task = fetch_weather_data(
+            start_date=start_date_str,
+            end_date=end_date_str
+        )
+        
+        naver_response, weather_data = await asyncio.gather(naver_task, weather_task)
 
         results = naver_response.get("results", [])
         if not results:
@@ -390,7 +404,8 @@ async def evaluate_single_keyword(payload: PredictKeywordRequest):
 
         evaluated_data, summary = evaluate_trend_accuracy(
             historical_data=historical,
-            test_days=15
+            test_days=15,
+            weather_data=weather_data
         )
 
         # 스케일링 로직
