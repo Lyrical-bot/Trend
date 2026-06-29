@@ -4,11 +4,13 @@ from dotenv import load_dotenv
 from typing import List, Dict, Any, Optional
 
 # Backend/key/.env 경로를 동적으로 지정하여 환경 변수 로드
-dotenv_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "key", ".env")
+dotenv_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env")
 load_dotenv(dotenv_path=dotenv_path)
 
 NAVER_CLIENT_ID = os.getenv("NAVER_CLIENT_ID")
 NAVER_CLIENT_SECRET = os.getenv("NAVER_CLIENT_SECRET")
+NAVER_CLIENT_ID2 = os.getenv("NAVER_CLIENT_ID2")
+NAVER_CLIENT_SECRET2 = os.getenv("NAVER_CLIENT_SECRET2")
 NAVER_API_URL = "https://openapi.naver.com/v1/datalab/search"
 
 async def fetch_naver_trend(
@@ -51,6 +53,20 @@ async def fetch_naver_trend(
             response = await client.post(NAVER_API_URL, json=body, headers=headers, timeout=10.0)
             if response.status_code == 200:
                 return response.json()
+            # 429 (Too Many Requests) 또는 403 (Forbidden, 한도초과 등) 발생 시 예비 키로 Fallback
+            elif response.status_code in [429, 403] and NAVER_CLIENT_ID2 and NAVER_CLIENT_SECRET2:
+                print(f"[Info] 메인 네이버 API 키 오류({response.status_code}). 예비 키(Key 2)로 재시도합니다...")
+                headers_fallback = {
+                    "X-Naver-Client-Id": NAVER_CLIENT_ID2,
+                    "X-Naver-Client-Secret": NAVER_CLIENT_SECRET2,
+                    "Content-Type": "application/json"
+                }
+                response2 = await client.post(NAVER_API_URL, json=body, headers=headers_fallback, timeout=10.0)
+                if response2.status_code == 200:
+                    return response2.json()
+                else:
+                    error_msg = f"네이버 API 예비 키 호출 실패 (상태 코드: {response2.status_code}): {response2.text}"
+                    raise Exception(error_msg)
             else:
                 error_msg = f"네이버 API 호출 실패 (상태 코드: {response.status_code}): {response.text}"
                 raise Exception(error_msg)

@@ -67,6 +67,18 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# === [SNS Sensing MVP (YouTube) 라우터 마운트] ===
+import sys
+# Backend 폴더가 아닌 최상위 루트 폴더를 경로에 추가해야 sns_sensing을 찾을 수 있습니다.
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+try:
+    from sns_sensing.api.main import router as sns_router
+    app.include_router(sns_router, prefix="/api/sns", tags=["SNS Sensing MVP"])
+except ImportError as e:
+    print(f"SNS Sensing 모듈을 불러올 수 없습니다: {e}")
+# ===============================================
+
+
 @app.on_event("startup")
 def startup_event():
     try:

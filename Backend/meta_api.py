@@ -3,7 +3,7 @@ import httpx
 from dotenv import load_dotenv
 
 # 1. key/.env 폴더에 있는 설정 값을 읽어옵니다.
-dotenv_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "key", ".env")
+dotenv_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env")
 load_dotenv(dotenv_path=dotenv_path)
 
 # 2. 메타 액세스 토큰 값 불러오기
