@@ -69,11 +69,16 @@ def sync_run_food_collection_job():
 
 def init_scheduler():
     from apscheduler.schedulers.background import BackgroundScheduler
+    from sns_sensing.pipeline.runner import run_pipeline
+    
     scheduler = BackgroundScheduler()
-    # 6시간마다 실행 (운영체제의 타임존에 따름)
+    # 6시간마다 식품 키워드 실행 (운영체제의 타임존에 따름)
     scheduler.add_job(sync_run_food_collection_job, 'interval', hours=6, id="food_top500_job")
+    # 3시간마다 유튜브 파이프라인 실행
+    scheduler.add_job(run_pipeline, 'interval', hours=3, id="youtube_pipeline_job")
+    
     scheduler.start()
-    print("백그라운드 스케줄러가 시작되었습니다. (주기: 6시간)")
+    print("백그라운드 스케줄러가 시작되었습니다. (주기: 식품 6시간, 유튜브 3시간)")
     
     # 만약 캐시 파일이 없다면 서버 시작 시 즉시 백그라운드로 1회 실행 트리거
     if not os.path.exists(WEAK_SIGNALS_CACHE) or not os.path.exists(VELOCITY_CACHE):
