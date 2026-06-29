@@ -100,6 +100,7 @@ async def _fetch_weather_data_chunk(start_date: str, end_date: str, stn_id: str 
 async def fetch_weather_data(start_date: str, end_date: str, stn_id: str = "108") -> List[Dict[str, Any]]:
     """
     기간을 360일 단위 청크로 분할하여 기상청 API를 병렬(asyncio.gather)로 호출하고 병합 정렬하여 반환합니다.
+    (동시 호출 수 제한을 위해 Semaphore를 적용하여 네트워크 오류를 방지합니다.)
     """
     from datetime import datetime, timedelta
     import asyncio
@@ -120,15 +121,21 @@ async def fetch_weather_data(start_date: str, end_date: str, stn_id: str = "108"
     if d1 > d2:
         return []
         
+    # 기상청 API 동시 접속 제한(세마포어 2개) 설정
+    sem = asyncio.Semaphore(2)
+    
+    async def sem_fetch(s_date: str, e_date: str):
+        async with sem:
+            return await _fetch_weather_data_chunk(s_date, e_date, stn_id)
+        
     tasks = []
     curr = d1
     while curr <= d2:
         next_curr = min(curr + timedelta(days=360), d2)
         
-        task = _fetch_weather_data_chunk(
+        task = sem_fetch(
             curr.strftime("%Y-%m-%d"), 
-            next_curr.strftime("%Y-%m-%d"), 
-            stn_id
+            next_curr.strftime("%Y-%m-%d")
         )
         tasks.append(task)
         

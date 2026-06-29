@@ -46,16 +46,22 @@ async def fetch_naver_trend(
     if ages:
         body["ages"] = ages
 
+    import asyncio
+    
     async with httpx.AsyncClient() as client:
-        try:
-            response = await client.post(NAVER_API_URL, json=body, headers=headers, timeout=10.0)
-            if response.status_code == 200:
-                return response.json()
-            else:
-                error_msg = f"네이버 API 호출 실패 (상태 코드: {response.status_code}): {response.text}"
-                raise Exception(error_msg)
-        except httpx.RequestError as exc:
-            raise Exception(f"네이버 API 요청 중 네트워크 오류가 발생했습니다: {exc}")
+        max_retries = 3
+        for retry in range(max_retries):
+            try:
+                response = await client.post(NAVER_API_URL, json=body, headers=headers, timeout=20.0)
+                if response.status_code == 200:
+                    return response.json()
+                else:
+                    error_msg = f"네이버 API 호출 실패 (상태 코드: {response.status_code}): {response.text}"
+                    raise Exception(error_msg)
+            except httpx.RequestError as exc:
+                if retry == max_retries - 1:
+                    raise Exception(f"네이버 API 요청 중 네트워크 오류가 발생했습니다 ({type(exc).__name__}): {exc}")
+                await asyncio.sleep(0.5)
 
 async def fetch_datalab_top_keywords(
     cid: str = "50022619", # 기본값: 스낵/과자 카테고리
