@@ -752,3 +752,191 @@ window.fetchSingleKeywordForecast = async function (keyword) {
         if (btPlaceholder) btPlaceholder.style.display = 'flex';
     }
 };
+
+// 유튜브 SNS 트렌드 (MVP) 호출 및 렌더링
+window.fetchSnsTrend = async function() {
+    const inputEl = document.getElementById('sns-keyword-input');
+    const keyword = inputEl ? inputEl.value.trim() : '';
+    
+    if (!keyword) {
+        alert('키워드를 입력해주세요.');
+        return;
+    }
+
+    const loading = document.getElementById('sns-loading');
+    const placeholder = document.getElementById('sns-placeholder');
+    const chartDiv = document.getElementById('sns-chart');
+    const metricsContainer = document.getElementById('sns-metrics-container');
+    
+    if (placeholder) placeholder.style.display = 'none';
+    if (chartDiv) chartDiv.style.display = 'none';
+    if (metricsContainer) metricsContainer.style.display = 'none';
+    if (loading) loading.style.display = 'flex';
+
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/sns/keyword/${encodeURIComponent(keyword)}`);
+        const result = await response.json();
+
+        if (loading) loading.style.display = 'none';
+
+        if (!response.ok) {
+            alert(`분석 실패: ${result.detail || '알 수 없는 오류'}`);
+            if (placeholder) placeholder.style.display = 'block';
+            return;
+        }
+
+        // 1. 4대 핵심 지표 렌더링
+        if (metricsContainer) {
+            metricsContainer.style.display = 'grid';
+            
+            const signals = result.signals || {};
+            
+            // 신규 진입 여부
+            const isNew = signals.is_new_keyword;
+            const elNew = document.getElementById('sns-metric-new');
+            if (elNew) {
+                elNew.textContent = isNew ? "최초 진입 🚀" : "기존 키워드";
+                elNew.style.color = isNew ? "#10b981" : "#6b7280"; // 초록 / 회색
+            }
+            
+            // Growth
+            const elGrowth = document.getElementById('sns-metric-growth');
+            if (elGrowth) {
+                const g = signals.growth || 0;
+                elGrowth.textContent = `${g > 0 ? '+' : ''}${g}%`;
+                elGrowth.style.color = g > 50 ? "#ef4444" : (g > 0 ? "#f97316" : "#6b7280");
+            }
+            
+            // Burst
+            const elBurst = document.getElementById('sns-metric-burst');
+            if (elBurst) {
+                const b = signals.burst || 0;
+                elBurst.textContent = `${b}배`;
+                elBurst.style.color = b >= 3 ? "#ef4444" : "#f97316";
+            }
+            
+            // Diversity
+            const elDiv = document.getElementById('sns-metric-diversity');
+            if (elDiv) {
+                const d = signals.channel_diversity || 0;
+                elDiv.textContent = `${d}`;
+                elDiv.style.color = d >= 0.8 ? "#10b981" : (d >= 0.5 ? "#3b82f6" : "#ef4444");
+            }
+        }
+
+        // 2. 타임라인 차트 렌더링
+        if (chartDiv) {
+            chartDiv.style.display = 'block';
+            
+            // 기존 차트 파괴 (ApexCharts)
+            if (window.snsApexChart) {
+                window.snsApexChart.destroy();
+            }
+
+            const timeline = result.timeline || [];
+            
+            if (timeline.length === 0) {
+                chartDiv.innerHTML = `<div style="text-align:center; padding:30px; color:var(--text-muted);">현재 타임라인 데이터가 없습니다. 유튜브 수집기를 가동해주세요.</div>`;
+                return;
+            }
+
+            const seriesData = timeline.map(item => ({
+                x: new Date(item.hour).getTime(),
+                y: item.count
+            }));
+
+            const options = {
+                series: [{
+                    name: '언급량(영상 수)',
+                    data: seriesData
+                }],
+                chart: {
+                    type: 'area',
+                    height: 300,
+                    toolbar: { show: false },
+                    fontFamily: 'Noto Sans KR, sans-serif'
+                },
+                colors: ['#ef4444'],
+                fill: {
+                    type: 'gradient',
+                    gradient: {
+                        shadeIntensity: 1,
+                        opacityFrom: 0.7,
+                        opacityTo: 0.1,
+                        stops: [0, 100]
+                    }
+                },
+                dataLabels: { enabled: false },
+                stroke: { curve: 'smooth', width: 3 },
+                xaxis: {
+                    type: 'datetime',
+                    labels: { style: { colors: '#9ca3af' } }
+                },
+                yaxis: {
+                    labels: { style: { colors: '#9ca3af' } }
+                },
+                grid: {
+                    borderColor: 'rgba(255,255,255,0.05)',
+                    strokeDashArray: 4
+                },
+                theme: { mode: 'dark' }
+            };
+
+            window.snsApexChart = new ApexCharts(chartDiv, options);
+            window.snsApexChart.render();
+        }
+
+    } catch (error) {
+        if (loading) loading.style.display = 'none';
+        if (placeholder) placeholder.style.display = 'block';
+        alert('SNS 트렌드 분석 중 오류가 발생했습니다.');
+    }
+};
+
+// [추가] Discovery Engine이 찾아낸 트렌드 키워드 자동 로드
+window.fetchDiscoveredKeywords = async function() {
+    const container = document.getElementById('sns-discovered-keywords');
+    if (!container) return;
+    
+    try {
+        const res = await fetch(`${API_BASE_URL}/api/sns/discovered-keywords`);
+        if (!res.ok) throw new Error('API Error');
+        const keywords = await res.json();
+        
+        container.innerHTML = '';
+        if (keywords.length === 0) {
+            container.innerHTML = '<span style="font-size: 0.8rem; color: var(--text-muted);">아직 수집된 핫 트렌드가 없습니다. 수집기를 가동해주세요.</span>';
+            return;
+        }
+        
+        keywords.forEach(k => {
+            const chip = document.createElement('button');
+            chip.type = 'button';
+            chip.style.cssText = 'background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); color: #ef4444; border-radius: 20px; padding: 4px 12px; font-size: 0.85rem; cursor: pointer; transition: all 0.2s;';
+            chip.innerHTML = `#${k.keyword} <span style="opacity: 0.6; font-size: 0.75rem; margin-left: 4px;">${k.mentions}</span>`;
+            
+            // 호버 효과
+            chip.onmouseover = () => { chip.style.background = 'rgba(239, 68, 68, 0.2)'; };
+            chip.onmouseout = () => { chip.style.background = 'rgba(239, 68, 68, 0.1)'; };
+            
+            // 클릭 시 검색창에 넣고 자동 분석!
+            chip.onclick = () => {
+                const input = document.getElementById('sns-keyword-input');
+                if (input) {
+                    input.value = k.keyword;
+                    window.fetchSnsTrend();
+                }
+            };
+            
+            container.appendChild(chip);
+        });
+        
+    } catch (e) {
+        container.innerHTML = '<span style="font-size: 0.8rem; color: var(--text-muted);">트렌드를 불러오는 중 오류가 발생했습니다.</span>';
+    }
+};
+
+// 페이지 로드 시 Discovery 키워드 가져오기
+document.addEventListener('DOMContentLoaded', () => {
+    window.fetchDiscoveredKeywords();
+});

@@ -5,6 +5,43 @@
 
 ---
 
+## 🏷️ v3.1 — 백엔드 파이프라인 안정화 및 지표 왜곡 버그 수정 (2026-06-29)
+
+### 주요 개선 사항
+1. **패키지 인프라 오류 복구 (심각 해결)**
+   - `sns_sensing` 및 `pipeline` 하위의 모든 디렉터리에 `__init__.py` 누락 복구
+   - `keyword_detector.py` 및 `test_signals.py` 내부의 깨진 패키지 임포트 경로 복구
+2. **데이터 지표 및 필터 왜곡 해결 (중요 해결)**
+   - **채널 다양성 지표 뻥튀기 방지**: 동시간대 동일 채널 여부를 사전에 체크하여 `channel_count` 중복 집계 방지
+   - **대시보드 24시간 필터 오류 해결**: 통계 기준 시간을 영상 업로드 시간(`published_at`)에서 수집 시간(`collected_at`)으로 변경
+   - **테스트 잔재 제거**: `signal_engine.py` 내 '버터떡' 키워드에 대한 무조건 150% Growth 강제 반환 로직 삭제
+   - **Shorts 전용 전략 도입**: 시드 키워드 검색 시 "리뷰" 텍스트 강제 추가 로직을 제거하고, `videoDuration='short'` 파라미터를 추가하여 쇼츠 영상 우선 수집
+3. **안정성 확보 및 클린업 (경고 해결)**
+   - **예비 API 키 버그 수정**: `naver_ad_api.py`에서 `CUSTOMER_ID2`를 `NAVER_AD_CUSTOMER_ID2`로 정상 참조하도록 수정
+   - **API 오류 크래시 방지**: YouTube 데이터 수집 중 API 할당량(Quota) 초과 시 서버가 멈추지 않도록 예외 처리(`try-except`) 적용
+   - **테스트 파일 격리**: 루트에 방치된 `test_youtube.py`, `test_cid.py`, `test_api.py` 등을 `tests/sandbox/` 로 일괄 이동
+   - **스케줄러 연동 완료**: 3시간마다 유튜브 파이프라인(`run_pipeline`)이 자동 백그라운드 실행되도록 `scheduler.py`에 등록
+
+---
+
+## 🏷️ v3.0 — Trend Bot MVP 아키텍처 개편 및 핵심 지표 도입 (2026-06-28)
+
+### 주요 개선 사항
+1. **신규 기능 격리 및 플랫폼별 모듈 구조 도입 (`sns_sensing` 폴더 격리)**
+   - 기존 레거시(네이버 검색어 봇) 코드와의 충돌 방지 및 유지보수성 향상을 위해 신규 MVP 관련 모든 기능(`api`, `database`, `models`, `pipeline`, `tests` 등)을 **`sns_sensing/`** 폴더 하위로 완전히 격리했습니다.
+   - 또한, 향후 TikTok, Reddit 확장을 대비하여 `sns_sensing/platforms/` 디렉터리를 생성하고, `youtube/` 모듈 아래에 `collector`, `processor`, `analyzer`를 독립시켰습니다.
+2. **원시 데이터(Raw Data) 저장 파이프라인 구축**
+   - 형태소 분석기 규칙 변경 시 API 재호출 없이 내부 DB만으로 데이터를 재처리할 수 있도록 `videos` (Raw 데이터), `keywords` (추출 결과), `keyword_stats` (통계)의 3단계 DB 구조를 도입했습니다.
+3. **엄격한 SQL 모델 주석 규칙 적용**
+   - 모든 SQLAlchemy 모델 선언 시 해당 테이블의 목적, 컬럼의 존재 이유, 활용처를 반드시 주석으로 명시하도록 강제했습니다.
+4. **Trend Score 배제 및 4대 핵심 지표 도입**
+   - 불확실한 가중치 기반의 Trend Score 대신 신규 키워드 여부(New Keyword), 언급 증가율(Growth), 급증 정도(Burst), 채널 다양성(Channel Diversity = unique channel / video count)을 직관적으로 제공하도록 MVP 방향성을 수정했습니다.
+5. **Keyword Timeline API 추가**
+   - 프론트엔드에서 즉시 사용할 수 있는 타임라인 데이터 반환용 `GET /keyword/{keyword}` 엔드포인트를 추가했습니다.
+6. **파이프라인 로깅 강화 및 회귀 테스트 추가**
+   - 디버깅을 위해 영상 수집 -> 키워드 추출 -> 신규 키워드 -> Burst 후보 흐름을 터미널에 명시적으로 출력하도록 하고, 핵심 지표 로직 보호를 위한 회귀 테스트(Regression Test) 항목을 신설했습니다.
+
+
 ## 🏷️ v2.5 — 장기 계절성 예측 오류 해결 및 차트 UI 개편 (2026-06-26)
 
 ### 주요 개선 사항

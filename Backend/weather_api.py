@@ -9,7 +9,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # .env 경로 지정
-dotenv_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "key", ".env")
+dotenv_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env")
 load_dotenv(dotenv_path=dotenv_path)
 
 ASOS_ENDPOINT = os.getenv("ASOS_ENDPOINT")

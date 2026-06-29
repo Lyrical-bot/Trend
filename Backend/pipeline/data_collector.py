@@ -12,8 +12,9 @@ sys.path.append(parent_dir)
 from naver_api import fetch_naver_trend
 from naver_ad_api import fetch_search_ad_volume
 
-# 환경변수 로드
-load_dotenv(os.path.join(parent_dir, '.env'))
+# 환경변수 로드 (.env는 최상위 루트 폴더에 위치함)
+root_dir = os.path.dirname(parent_dir)
+load_dotenv(os.path.join(root_dir, '.env'))
 
 # 사용자님이 요청하신 핵심 5개 키워드 + F&B 15개 키워드 (총 20개)
 KEYWORDS = [

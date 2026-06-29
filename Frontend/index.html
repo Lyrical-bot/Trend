@@ -228,6 +228,62 @@
                 </section>
                 <!-- /[모듈] 가속도 랭킹 UI 끝 -->
 
+                <!-- [모듈] 📱 유튜브 SNS 트렌드 4대 핵심 지표 분석 MVP -->
+                <section class="clean-card" id="sns-trend-module" style="margin-bottom: 24px; border: 2px solid rgba(239, 68, 68, 0.3);">
+                    <div class="chart-header-row" style="margin-bottom: 16px;">
+                        <h2 class="section-title"><i class="fa-brands fa-youtube" style="color: #ef4444;"></i> 유튜브 SNS 트렌드 4대 지표 추적 (MVP)</h2>
+                        <div style="display: flex; gap: 10px; align-items: center; font-size: 0.9rem;">
+                            <input type="text" id="sns-keyword-input" class="clean-select" style="padding: 6px 12px; height: auto;" placeholder="키워드 입력 (예: 버터떡)">
+                            <button type="button" class="btn-primary btn-sm" onclick="window.fetchSnsTrend()" style="background-color: #ef4444; border-color: #ef4444;">
+                                <i class="fa-solid fa-search"></i> 분석
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <!-- [추가] Discovery Engine이 찾아낸 핫 트렌드 영역 -->
+                    <div style="margin-bottom: 20px; padding: 12px; background: rgba(239, 68, 68, 0.05); border-radius: 8px;">
+                        <div style="font-size: 0.85rem; font-weight: 600; color: #ef4444; margin-bottom: 8px;">
+                            <i class="fa-solid fa-satellite-dish"></i> CCTV 관측소: 오늘 시스템이 새롭게 발견한 핫 트렌드
+                        </div>
+                        <div id="sns-discovered-keywords" style="display: flex; flex-wrap: wrap; gap: 8px;">
+                            <!-- JS로 뱃지들이 여기에 들어옵니다 -->
+                            <span style="font-size: 0.8rem; color: var(--text-muted);">데이터를 불러오는 중...</span>
+                        </div>
+                    </div>
+                    
+                    <div id="sns-loading" class="chart-overlay" style="display: none; position: static; min-height: 100px; margin-bottom: 20px;">
+                        <div class="spinner"></div>
+                        <p style="margin-top: 10px;">유튜브 SNS 트렌드 데이터를 불러오는 중...</p>
+                    </div>
+
+                    <!-- 4대 지표 요약 카드 -->
+                    <div id="sns-metrics-container" style="display: none; grid-template-columns: repeat(4, 1fr); gap: 15px; margin-bottom: 20px;">
+                        <div class="glass-card" style="padding: 15px; text-align: center;">
+                            <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 5px;">신규 진입 여부</div>
+                            <div id="sns-metric-new" style="font-size: 1.5rem; font-weight: bold; color: #10b981;">-</div>
+                        </div>
+                        <div class="glass-card" style="padding: 15px; text-align: center;">
+                            <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 5px;" title="최근 3일 평균이 직전 7일 평균 대비 상승한 비율">Growth (성장률)</div>
+                            <div id="sns-metric-growth" style="font-size: 1.5rem; font-weight: bold; color: #f97316;">-</div>
+                        </div>
+                        <div class="glass-card" style="padding: 15px; text-align: center;">
+                            <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 5px;" title="초기 폭발력 배수">Burst (급증도)</div>
+                            <div id="sns-metric-burst" style="font-size: 1.5rem; font-weight: bold; color: #ef4444;">-</div>
+                        </div>
+                        <div class="glass-card" style="padding: 15px; text-align: center;">
+                            <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 5px;" title="채널 수 / 영상 수 (1에 가까울수록 건전함)">채널 다양성 (건전성)</div>
+                            <div id="sns-metric-diversity" style="font-size: 1.5rem; font-weight: bold; color: #3b82f6;">-</div>
+                        </div>
+                    </div>
+
+                    <!-- 타임라인 그래프 영역 -->
+                    <div id="sns-chart" style="min-height: 300px; display: none;"></div>
+                    <div id="sns-placeholder" style="text-align: center; padding: 40px; color: var(--text-muted);">
+                        <i class="fa-brands fa-youtube" style="font-size: 3rem; opacity: 0.2; margin-bottom: 10px;"></i>
+                        <p>키워드를 검색하여 타임라인 추이를 확인하세요.</p>
+                    </div>
+                </section>
+                <!-- /[모듈] 유튜브 SNS 트렌드 끝 -->
                 <!-- Analysis Summary Cards (Generated dynamically) -->
                 <section class="summary-section" id="summary-cards-container" style="display:none;">
                     <!-- Dynamically generated summary cards will go here -->
