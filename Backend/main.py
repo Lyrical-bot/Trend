@@ -423,6 +423,57 @@ async def evaluate_single_keyword(payload: PredictKeywordRequest):
         raise HTTPException(status_code=500, detail=str(exc))
 # ===============================
 
+@app.get("/api/trend-synthesis")
+async def get_trend_synthesis(keyword: str):
+    from sns_sensing.database.db import SessionLocal
+    from sns_sensing.pipeline.youtube.analytics.signal_engine import calculate_all_signals
+    from naver_ad_api import fetch_search_ad_volume
+    from datetime import datetime
+    
+    # 1. Fetch YouTube signals
+    db = SessionLocal()
+    current_time = datetime.now()
+    sns_signals = calculate_all_signals(db, keyword, current_time)
+    db.close()
+    
+    # 2. Fetch Naver Absolute Search Volume (월간 검색 건수)
+    try:
+        ad_volumes = await fetch_search_ad_volume([keyword])
+        monthly_volume = ad_volumes.get(keyword, 0.0)
+    except Exception as e:
+        print(f"Synthesis Naver AD Error: {e}")
+        monthly_volume = 0.0
+
+    # 3. Decision Logic (Absolute thresholds)
+    # 유튜브 핫함 기준: 다양한 채널(0.5 이상)이거나 급증도(Burst)가 2 이상일 때
+    is_youtube_hot = sns_signals.get("channel_diversity", 0) >= 0.5 or sns_signals.get("burst", 0) >= 2 or sns_signals.get("growth", 0) > 0
+    
+    # 네이버 대중화 기준: 월간 검색량 기준 (예: 5000건 미만이면 아직 블루오션)
+    LOW_VOLUME_THRESHOLD = 5000
+    is_naver_low = monthly_volume < LOW_VOLUME_THRESHOLD
+    is_naver_high = monthly_volume >= LOW_VOLUME_THRESHOLD
+    
+    if is_youtube_hot and is_naver_low:
+        phase = "GOLDEN_TIME"
+        message = f"유튜브 확산 지표가 높지만, 네이버 월간 검색량은 {monthly_volume:,.0f}건으로 아직 대중화되지 않았습니다. 지금이 상품 기획의 골든타임(블루오션)입니다!"
+    elif is_youtube_hot and is_naver_high:
+        phase = "RED_OCEAN"
+        message = f"유튜브와 네이버(월 {monthly_volume:,.0f}건 검색) 모두 반응이 뜨겁습니다. 이미 대중 확산기(레드오션 진입)에 접어들었으니 발 빠른 대응이 필요합니다."
+    elif not is_youtube_hot and is_naver_high:
+        phase = "LATE_STAGE"
+        message = f"네이버 월간 검색량은 {monthly_volume:,.0f}건으로 높으나 유튜브 크리에이터들의 관심은 식었습니다. 유행의 끝물일 수 있으니 주의하세요."
+    else:
+        phase = "OBSERVE"
+        message = f"유튜브 확산 지표가 낮고 네이버 검색량도 {monthly_volume:,.0f}건으로 뚜렷한 확산 신호가 감지되지 않았습니다. 지속적인 관망이 필요합니다."
+        
+    return {
+        "keyword": keyword,
+        "phase": phase,
+        "message": message,
+        "sns_signals": sns_signals,
+        "naver_monthly_volume": monthly_volume
+    }
+
 @app.get("/api/meta-accounts")
 def read_meta_accounts():
     if get_meta_accounts is None:

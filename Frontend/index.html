@@ -251,6 +251,18 @@
                         </div>
                     </div>
                     
+                    <!-- [추가] 통합 트렌드 교차 검증 (블루오션 판별기) -->
+                    <div id="trend-synthesis-container" style="display: none; margin-bottom: 20px; padding: 16px; border-radius: 8px; border-left: 4px solid #3b82f6; background: rgba(59, 130, 246, 0.05);">
+                        <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                            <div>
+                                <div style="font-size: 0.75rem; font-weight: bold; color: #3b82f6; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px;">MD 추천 골든타임 검증기</div>
+                                <h3 id="trend-synthesis-phase" style="margin: 0 0 8px 0; font-size: 1.2rem; color: var(--text-primary);">상태 판별 중...</h3>
+                                <p id="trend-synthesis-msg" style="margin: 0; font-size: 0.9rem; color: var(--text-muted); line-height: 1.4;"></p>
+                            </div>
+                            <div id="trend-synthesis-badge" style="padding: 6px 12px; border-radius: 20px; font-size: 0.8rem; font-weight: bold; text-align: center;"></div>
+                        </div>
+                    </div>
+                    
                     <div id="sns-loading" class="chart-overlay" style="display: none; position: static; min-height: 100px; margin-bottom: 20px;">
                         <div class="spinner"></div>
                         <p style="margin-top: 10px;">유튜브 SNS 트렌드 데이터를 불러오는 중...</p>
@@ -271,7 +283,7 @@
                             <div id="sns-metric-burst" style="font-size: 1.5rem; font-weight: bold; color: #ef4444;">-</div>
                         </div>
                         <div class="glass-card" style="padding: 15px; text-align: center;">
-                            <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 5px;" title="채널 수 / 영상 수 (1에 가까울수록 건전함)">채널 다양성 (건전성)</div>
+                            <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 5px;" title="이 키워드를 다루는 서로 다른 유튜브 채널의 수 (많을수록 찐 트렌드)">확산 채널 수 (건전성)</div>
                             <div id="sns-metric-diversity" style="font-size: 1.5rem; font-weight: bold; color: #3b82f6;">-</div>
                         </div>
                     </div>
