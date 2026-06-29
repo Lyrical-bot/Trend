@@ -535,3 +535,22 @@ INFO: Waiting for application startup.
 INFO: Application startup complete.
 INFO: Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
 IMPORTANT
+
+이 터미널 창은 백엔드 서버가 켜져 있는 창이므로 그대로 켜두셔야 합니다. 다른 명령어를 치려면 새 터미널 창을 하나 더 열어야 합니다.
+
+4단계: 프론트엔드 대시보드 실행 (3가지 방법 중 택 1)
+백엔드 서버가 켜진 상태에서 프론트엔드를 실행하는 방법입니다. 편한 방식을 선택해 보세요.
+
+[방법 A] VS Code의 Live Server 사용 (가장 추천 👍)
+VS Code 좌측 파일 탐색기에서 Frontend 폴더 아래의 index.html 파일을 마우스 우클릭합니다.
+**[Open with Live Server]**를 클릭합니다. (VS Code 화면 우측 하단의 [Go Live] 버튼을 클릭해도 됩니다.)
+브라우저가 자동으로 열리며 http://127.0.0.1:5500/index.html 주소로 대시보드가 실행됩니다.
+[방법 B] 파이썬 간이 웹 서버 띄우기
+VS Code에서 **새 터미널(New Terminal)**을 하나 더 엽니다.
+프론트엔드 폴더로 이동합니다:
+powershell
+cd Frontend
+파이썬 기본 웹 서버를 구동합니다:
+powershell
+python -m http.server 5500
+크롬 등 인터넷 브라우저 주소창에 http://127.0.0.1:5500 을 입력하여 접속합니다.
