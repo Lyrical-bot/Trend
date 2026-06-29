@@ -48,54 +48,57 @@ async def _fetch_weather_data_chunk(start_date: str, end_date: str, stn_id: str 
         "stnIds": stn_id
     }
     
+    import asyncio
+    
     async with httpx.AsyncClient() as client:
-        try:
-            response = await client.get(url, params=params, timeout=15.0)
-            
-            if response.status_code != 200:
-                logger.error(f"기상청 API 실패 (상태 코드: {response.status_code}): {response.text}")
-                return []
+        max_retries = 3
+        for retry in range(max_retries):
+            try:
+                response = await client.get(url, params=params, timeout=15.0)
                 
-            res_data = response.json()
-            body = res_data.get("response", {}).get("body", {})
-            if not body:
-                logger.warning(f"기상청 API 응답 바디가 비어있습니다. 응답: {res_data}")
-                return []
-                
-            items = body.get("items", {}).get("item", [])
-            if isinstance(items, dict):
-                items = [items]
-                
-            weather_list = []
-            for item in items:
-                period = item.get("tm", "")
-                avg_ta = item.get("avgTa", "")
-                sum_rn = item.get("sumRn", "")
-                
-                try:
-                    avg_ta = float(avg_ta) if avg_ta else 0.0
-                except ValueError:
-                    avg_ta = 0.0
+                if response.status_code != 200:
+                    raise Exception(f"기상청 API 상태 코드 오류: {response.status_code}")
                     
-                try:
-                    sum_rn = float(sum_rn) if sum_rn else 0.0
-                except ValueError:
-                    sum_rn = 0.0
+                res_data = response.json()
+                body = res_data.get("response", {}).get("body", {})
+                if not body:
+                    raise Exception("기상청 API 응답 바디가 비어있습니다.")
                     
-                weather_list.append({
-                    "period": period,
-                    "avgTa": avg_ta,
-                    "sumRn": sum_rn
-                })
+                items = body.get("items", {}).get("item", [])
+                if isinstance(items, dict):
+                    items = [items]
+                    
+                weather_list = []
+                for item in items:
+                    period = item.get("tm", "")
+                    avg_ta = item.get("avgTa", "")
+                    sum_rn = item.get("sumRn", "")
+                    
+                    try:
+                        avg_ta = float(avg_ta) if avg_ta else 0.0
+                    except ValueError:
+                        avg_ta = 0.0
+                        
+                    try:
+                        sum_rn = float(sum_rn) if sum_rn else 0.0
+                    except ValueError:
+                        sum_rn = 0.0
+                        
+                    weather_list.append({
+                        "period": period,
+                        "avgTa": avg_ta,
+                        "sumRn": sum_rn
+                    })
+                    
+                return weather_list
                 
-            return weather_list
-            
-        except httpx.RequestError as exc:
-            logger.error(f"기상청 API 네트워크 오류: {exc}")
-            return []
-        except Exception as e:
-            logger.error(f"기상청 데이터 파싱 오류: {e}")
-            return []
+            except (httpx.RequestError, Exception) as exc:
+                logger.warning(f"기상청 API 요청 실패 (시도 {retry + 1}/{max_retries}): {exc}")
+                if retry == max_retries - 1:
+                    logger.error(f"기상청 API 최종 수집 실패 (시도 {max_retries}회 모두 실패): {exc}")
+                    return []
+                # 일시적 오류 완화를 위해 0.5초 대기 후 재시도
+                await asyncio.sleep(0.5)
 
 async def fetch_weather_data(start_date: str, end_date: str, stn_id: str = "108") -> List[Dict[str, Any]]:
     """
