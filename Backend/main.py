@@ -1,14 +1,18 @@
 import os
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from typing import List, Dict, Any, Optional
 from datetime import datetime, timedelta
 from naver_api import fetch_naver_trend
 from forecaster import forecast_trend, evaluate_trend_accuracy
 from naver_ad_api import fetch_search_ad_volume
+try:
+    from meta_api import get_meta_accounts
+except ImportError:
+    get_meta_accounts = None
+
+from weather_api import fetch_weather_data
 
 def _get_scale_multiplier(data_list: list, monthly_volume: float, days_queried: int, time_unit: str = "date") -> float:
     """네이버 비율값(0~100)을 실제 검색 건수로 환산하기 위한 배수를 계산합니다."""
@@ -106,9 +110,11 @@ async def predict_trend(payload: PredictRequest):
         
         ad_volumes = await fetch_search_ad_volume(all_keywords)
 
-        # 1. 네이버 데이터랩 API 호출
+        # 1. 네이버 데이터랩 API 및 기상청 API 병렬 호출
+        import asyncio
         groups = [{"groupName": g.groupName, "keywords": g.keywords} for g in payload.keywordGroups]
-        naver_response = await fetch_naver_trend(
+        
+        naver_task = fetch_naver_trend(
             start_date=payload.startDate,
             end_date=payload.endDate,
             time_unit=payload.timeUnit,
@@ -117,6 +123,12 @@ async def predict_trend(payload: PredictRequest):
             gender=payload.gender,
             ages=payload.ages
         )
+        weather_task = fetch_weather_data(
+            start_date=payload.startDate,
+            end_date=payload.endDate
+        )
+        
+        naver_response, weather_data = await asyncio.gather(naver_task, weather_task)
 
         results = naver_response.get("results", [])
         response_data = []
@@ -180,7 +192,8 @@ async def predict_trend(payload: PredictRequest):
             "startDate": naver_response.get("startDate"),
             "endDate": naver_response.get("endDate"),
             "timeUnit": naver_response.get("timeUnit"),
-            "results": response_data
+            "results": response_data,
+            "weather": weather_data
         }
 
     except ValueError as val_err:
@@ -192,29 +205,29 @@ async def predict_trend(payload: PredictRequest):
 @app.get("/api/velocity-ranking")
 async def get_velocity_ranking_api(start_date: Optional[str] = None, end_date: Optional[str] = None, use_live: bool = True):
     """
-    날짜를 지정하면 해당 기간 기준으로 재계산하고, 날짜가 없으면 최신 캐시를 반환합니다.
+    날짜를 지정하면 해당 기간 기준으로 재계산하고, 날짜가 없거나 실시간 데이터가 부족하면 최신 캐시를 반환합니다.
     """
+    from pipeline.scheduler import VELOCITY_CACHE, LOCK_FILE
+    import json
+    
     has_custom_range = bool(start_date and end_date)
 
-    if use_live and not has_custom_range:
-        from pipeline.scheduler import VELOCITY_CACHE, LOCK_FILE
-        import json
-        
-        if os.path.exists(VELOCITY_CACHE):
-            with open(VELOCITY_CACHE, "r", encoding="utf-8") as f:
-                return json.load(f)
-        elif os.path.exists(LOCK_FILE):
-            return {"message": "현재 500개의 식품 트렌드 데이터를 수집 및 분석 중입니다. 약 2~3분 후 새로고침 해주세요.", "data": []}
-        else:
-            return {"error": "캐시된 데이터가 없습니다. 서버 백그라운드 수집을 기다려주세요.", "data": []}
+    # 1. 캐시 데이터가 존재하면 우선적으로 캐시를 반환하여 데이터 유실 404 에러를 방지합니다.
+    if os.path.exists(VELOCITY_CACHE):
+        with open(VELOCITY_CACHE, "r", encoding="utf-8") as f:
+            return json.load(f)
 
-    if get_velocity_ranking is None:
-        raise HTTPException(status_code=500, detail="가속도 랭킹 모듈을 찾을 수 없습니다.")
+    # 2. 캐시가 없고 실시간 분석 모듈이 존재하면 실시간 분석을 수행합니다.
+    if get_velocity_ranking is not None:
+        result = get_velocity_ranking(start_date, end_date)
+        if "error" not in result:
+            return result
+
+    # 3. 폴백 반환
+    if os.path.exists(LOCK_FILE):
+        return {"message": "현재 500개의 식품 트렌드 데이터를 수집 및 분석 중입니다. 약 2~3분 후 새로고침 해주세요.", "data": []}
         
-    result = get_velocity_ranking(start_date, end_date)
-    if "error" in result:
-        raise HTTPException(status_code=404, detail=result["error"])
-    return result
+    return {"error": "데이터가 없습니다. 서버 백그라운드 수집을 기다려주세요.", "data": []}
 # ===============================
 
 # === [Weak Signal 감지 API 연동부] ===
@@ -223,26 +236,27 @@ async def get_weak_signals_api(target_date: Optional[str] = None, use_live: bool
     """
     고도화된 AI 피처 엔진을 통해 넥스트 히트 상품(Weak Signal) 랭킹 캐시를 반환합니다.
     """
-    if detect_weak_signals is None:
-        raise HTTPException(status_code=500, detail="Weak Signal 엔진 모듈을 찾을 수 없습니다.")
-        
-    try:
-        if use_live:
-            from pipeline.scheduler import WEAK_SIGNALS_CACHE, LOCK_FILE
-            import json
+    from pipeline.scheduler import WEAK_SIGNALS_CACHE, LOCK_FILE
+    import json
+    
+    # 1. 약점 신호 캐시가 존재하면 우선 반환합니다.
+    if os.path.exists(WEAK_SIGNALS_CACHE):
+        with open(WEAK_SIGNALS_CACHE, "r", encoding="utf-8") as f:
+            return json.load(f)
             
-            if os.path.exists(WEAK_SIGNALS_CACHE):
-                with open(WEAK_SIGNALS_CACHE, "r", encoding="utf-8") as f:
-                    return json.load(f)
-            elif os.path.exists(LOCK_FILE):
-                return {"message": "현재 500개의 식품 트렌드 데이터를 수집 및 분석 중입니다. 약 2~3분 후 새로고침 해주세요.", "data": []}
-            else:
-                return {"error": "캐시된 데이터가 없습니다. 서버 백그라운드 수집을 기다려주세요.", "data": []}
-        else:
+    # 2. 캐시가 없을 시 실시간 랭킹 연산을 수행합니다.
+    if detect_weak_signals is not None:
+        try:
             results = detect_weak_signals(target_date)
             return {"data": results}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"엔진 분석 오류: {str(e)}")
+        except Exception:
+            pass
+            
+    # 3. 폴백 반환
+    if os.path.exists(LOCK_FILE):
+        return {"message": "현재 500개의 식품 트렌드 데이터를 수집 및 분석 중입니다. 약 2~3분 후 새로고침 해주세요.", "data": []}
+        
+    return {"error": "데이터가 없습니다. 서버 백그라운드 수집을 기다려주세요.", "data": []}
 # ===============================
 
 # === [Prophet 단일 키워드 예측 API 연동부] ===
@@ -256,19 +270,27 @@ async def predict_single_keyword(payload: PredictKeywordRequest):
         from datetime import datetime, timedelta
         
         end_date = datetime.now()
-        start_date = end_date - timedelta(days=1185)
+        start_date = end_date - timedelta(days=3652)
         start_date_str = start_date.strftime("%Y-%m-%d")
         end_date_str = end_date.strftime("%Y-%m-%d")
         
         ad_volumes = await fetch_search_ad_volume([payload.keyword])
         group_monthly_volume = ad_volumes.get(payload.keyword, 0.0)
 
-        naver_response = await fetch_naver_trend(
+        import asyncio
+        
+        naver_task = fetch_naver_trend(
             start_date=start_date_str,
             end_date=end_date_str,
             time_unit="date",
             keyword_groups=[{"groupName": payload.keyword, "keywords": [payload.keyword]}]
         )
+        weather_task = fetch_weather_data(
+            start_date=start_date_str,
+            end_date=end_date_str
+        )
+        
+        naver_response, weather_data = await asyncio.gather(naver_task, weather_task)
 
         results = naver_response.get("results", [])
         if not results:
@@ -314,7 +336,8 @@ async def predict_single_keyword(payload: PredictKeywordRequest):
             "keyword": payload.keyword,
             "data": combined_data,
             "signals": signals,
-            "summary": summary
+            "summary": summary,
+            "weather": weather_data
         }
 
     except Exception as exc:
@@ -326,7 +349,7 @@ async def evaluate_single_keyword(payload: PredictKeywordRequest):
         from datetime import datetime, timedelta
         
         end_date = datetime.now()
-        start_date = end_date - timedelta(days=1185)
+        start_date = end_date - timedelta(days=3652)
         start_date_str = start_date.strftime("%Y-%m-%d")
         end_date_str = end_date.strftime("%Y-%m-%d")
         
@@ -373,20 +396,11 @@ async def evaluate_single_keyword(payload: PredictKeywordRequest):
         raise HTTPException(status_code=500, detail=str(exc))
 # ===============================
 
-# 프론트엔드 정적 파일 서빙을 위한 설정
-static_dir = os.path.join(os.path.dirname(__file__), "static")
-if not os.path.exists(static_dir):
-    os.makedirs(static_dir)
-
-@app.get("/")
-async def read_index():
-    index_file = os.path.join(static_dir, "index.html")
-    if os.path.exists(index_file):
-        return FileResponse(index_file)
-    return {"message": "대시보드 index.html 파일을 작성 중입니다. 잠시 후 새로고침해 주세요."}
-
-# static 폴더 마운트 (index.html 이외의 css, js 리소스 제공)
-app.mount("/static", StaticFiles(directory=static_dir), name="static")
+@app.get("/api/meta-accounts")
+def read_meta_accounts():
+    if get_meta_accounts is None:
+        raise HTTPException(status_code=500, detail="Meta API 모듈을 찾을 수 없습니다.")
+    return get_meta_accounts()
 
 if __name__ == "__main__":
     import uvicorn

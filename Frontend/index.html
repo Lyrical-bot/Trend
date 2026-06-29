@@ -13,7 +13,7 @@
     <!-- ApexCharts CDN -->
     <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
     <!-- Custom CSS -->
-    <link rel="stylesheet" href="/static/css/style.css?v=4">
+    <link rel="stylesheet" href="css/style.css?v=4">
 </head>
 <body>
     <div class="app-container">
@@ -46,15 +46,7 @@
                                 <input type="text" class="input-group-name" placeholder="그룹 명 (예: 인공지능)" required value="인공지능">
                                 <input type="text" class="input-keywords" placeholder="쉼표로 키워드 구분 (예: AI, 인공지능, 딥러닝)" required value="AI, 인공지능, 딥러닝">
                             </div>
-                            <!-- Group 2 -->
-                            <div class="keyword-group-item clean-input-group" data-index="1">
-                                <div class="group-header">
-                                    <span class="group-num">그룹 2</span>
-                                    <button type="button" class="btn-remove-group"><i class="fa-solid fa-trash"></i></button>
-                                </div>
-                                <input type="text" class="input-group-name" placeholder="그룹 명 (예: 메타버스)" required value="메타버스">
-                                <input type="text" class="input-keywords" placeholder="쉼표로 키워드 구분 (예: 메타버스, VR, 가상세계)" required value="메타버스, VR, 가상세계">
-                            </div>
+
                         </div>
                         <button type="button" id="btn-add-group" class="btn-secondary"><i class="fa-solid fa-plus"></i> 키워드 그룹 추가</button>
                     </div>
@@ -101,7 +93,7 @@
                             <span><i class="fa-solid fa-filter"></i> 상세 세부 필터</span>
                             <i class="fa-solid fa-chevron-down toggle-icon"></i>
                         </div>
-                        <div class="accordion-body id="filter-body" style="display: none;">
+                        <div class="accordion-body" id="filter-body" style="display: none;">
                             <div class="form-field">
                                 <label class="form-label">기기 구분</label>
                                 <div class="radio-group">
@@ -243,8 +235,26 @@
 
                 <!-- Chart Card (Prediction) -->
                 <section class="clean-card chart-container" style="margin-bottom: 1.5rem;">
-                    <div class="chart-header-row">
+                    <div class="chart-header-row" style="flex-wrap: wrap; gap: 10px;">
                         <h2 class="section-title"><i class="fa-solid fa-chart-area"></i> 미래 30일 트렌드 예측 시각화</h2>
+                        <div class="weather-controls" style="display: flex; gap: 12px; align-items: center; font-size: 0.85rem; margin-right: 10px;">
+                            <label style="display: flex; align-items: center; gap: 5px; cursor: pointer; color: var(--text-main); font-weight: 500;">
+                                <input type="checkbox" id="chk-weather-temp" style="cursor: pointer; width: 15px; height: 15px;" checked>
+                                <i class="fa-solid fa-temperature-half" style="color: #ef4444;"></i> 평균 기온 (°C)
+                            </label>
+                            <label style="display: flex; align-items: center; gap: 5px; cursor: pointer; color: var(--text-main); font-weight: 500;">
+                                <input type="checkbox" id="chk-weather-rain" style="cursor: pointer; width: 15px; height: 15px;" checked>
+                                <i class="fa-solid fa-cloud-showers-heavy" style="color: #3b82f6;"></i> 강수량 (mm)
+                            </label>
+                        </div>
+                        <div class="zoom-controls" style="display: flex; gap: 6px; align-items: center; margin-right: 15px;">
+                            <button id="btn-zoom-in" class="clean-btn" title="확대 (+)" style="width: 30px; height: 30px; border-radius: 50%; background: #ffffff; border: 1px solid var(--card-border); color: var(--text-main); font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s ease; box-shadow: var(--shadow-sm);" onmouseover="this.style.background='var(--primary)'; this.style.color='white'; this.style.borderColor='var(--primary)';" onmouseout="this.style.background='#ffffff'; this.style.color='var(--text-main)'; this.style.borderColor='var(--card-border)';" onclick="this.blur()">
+                                <i class="fa-solid fa-plus"></i>
+                            </button>
+                            <button id="btn-zoom-out" class="clean-btn" title="축소 (-)" style="width: 30px; height: 30px; border-radius: 50%; background: #ffffff; border: 1px solid var(--card-border); color: var(--text-main); font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s ease; box-shadow: var(--shadow-sm);" onmouseover="this.style.background='var(--primary)'; this.style.color='white'; this.style.borderColor='var(--primary)';" onmouseout="this.style.background='#ffffff'; this.style.color='var(--text-main)'; this.style.borderColor='var(--card-border)';" onclick="this.blur()">
+                                <i class="fa-solid fa-minus"></i>
+                            </button>
+                        </div>
                         <div class="chart-legend">
                             <span class="legend-item"><span class="legend-color hist"></span>과거 트렌드</span>
                             <span class="legend-item"><span class="legend-color fore"></span>미래 예측</span>
@@ -265,10 +275,20 @@
                 <section class="clean-card chart-container backtest-container">
                     <div class="chart-header-row">
                         <h2 class="section-title"><i class="fa-solid fa-microscope"></i> 모델 정확도 검증 (과거 15일 백테스트)</h2>
-                        <div class="chart-legend">
-                            <span class="legend-item"><span class="legend-color hist"></span>학습 구간</span>
-                            <span class="legend-item"><span class="legend-color hist" style="background:#3b82f6"></span>실제 정답</span>
-                            <span class="legend-item"><span class="legend-color fore"></span>AI 예측</span>
+                        <div style="display: flex; align-items: center; gap: 15px;">
+                            <div class="zoom-controls" style="display: flex; gap: 6px; align-items: center;">
+                                <button id="btn-bt-zoom-in" class="clean-btn" title="확대 (+)" style="width: 30px; height: 30px; border-radius: 50%; background: #ffffff; border: 1px solid var(--card-border); color: var(--text-main); font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s ease; box-shadow: var(--shadow-sm);" onmouseover="this.style.background='var(--primary)'; this.style.color='white'; this.style.borderColor='var(--primary)';" onmouseout="this.style.background='#ffffff'; this.style.color='var(--text-main)'; this.style.borderColor='var(--card-border)';" onclick="this.blur()">
+                                    <i class="fa-solid fa-plus"></i>
+                                </button>
+                                <button id="btn-bt-zoom-out" class="clean-btn" title="축소 (-)" style="width: 30px; height: 30px; border-radius: 50%; background: #ffffff; border: 1px solid var(--card-border); color: var(--text-main); font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s ease; box-shadow: var(--shadow-sm);" onmouseover="this.style.background='var(--primary)'; this.style.color='white'; this.style.borderColor='var(--primary)';" onmouseout="this.style.background='#ffffff'; this.style.color='var(--text-main)'; this.style.borderColor='var(--card-border)';" onclick="this.blur()">
+                                    <i class="fa-solid fa-minus"></i>
+                                </button>
+                            </div>
+                            <div class="chart-legend">
+                                <span class="legend-item"><span class="legend-color hist"></span>학습 구간</span>
+                                <span class="legend-item"><span class="legend-color hist" style="background:#3b82f6"></span>실제 정답</span>
+                                <span class="legend-item"><span class="legend-color fore"></span>AI 예측</span>
+                            </div>
                         </div>
                     </div>
                     <div id="backtest-loading" class="chart-overlay" style="display: none;">
@@ -302,7 +322,7 @@
         </div>
     </div>
 
-    <script src="/static/js/chart-helper.js?v=7"></script>
-    <script src="/static/js/app.js?v=7"></script>
+    <script src="js/chart-helper.js?v=7"></script>
+    <script src="js/app.js?v=7"></script>
 </body>
 </html>

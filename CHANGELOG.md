@@ -45,10 +45,11 @@
 ## 🏷️ v2.5 — 장기 계절성 예측 오류 해결 및 차트 UI 개편 (2026-06-26)
 
 ### 주요 개선 사항
+
 1. **계절성(Seasonality) 예측 정확도 개선: 데이터 수집 기간 1년 → 3년 3개월 확장**
    - 기존 1년(365일)치 데이터만 수집하여 `Prophet` 모델이 여름철/겨울철 등 특정 계절 상품(수박, 오디 등)의 사이클을 단순 하락 추세(Trend)로 오해하던 문제 해결
    - `main.py`와 `pipeline/data_collector.py`의 수집 기간을 3년 3개월(1185일)로 확장하여 `Prophet`이 `yearly_seasonality`를 자동으로 학습하도록 조치
-   - *(참고: 초기에 10년 치로 확장했으나 API 응답 속도 및 모델 학습 속도 저하 문제로 2년으로 내렸다가, 완전한 3번의 여름 사이클(23년 4월 말 시작)을 확보하기 위해 최종 3년 3개월로 타협)*
+   - _(참고: 초기에 10년 치로 확장했으나 API 응답 속도 및 모델 학습 속도 저하 문제로 2년으로 내렸다가, 완전한 3번의 여름 사이클(23년 4월 말 시작)을 확보하기 위해 최종 3년 3개월로 타협)_
 2. **프론트엔드 차트 반응형 X축(시계열) 도입**
    - 10년 치 방대한 데이터 렌더링 시 X축 라벨(날짜)이 겹쳐서 까맣게 뭉개지는 현상 해결
    - `static/js/chart-helper.js`의 ApexCharts 설정에서 `xaxis.type`을 `datetime`으로 변경하여, 축소/확대 줌(Zoom) 비율에 따라 '연/월' 및 '일' 표기가 동적으로 전환되도록 개선
@@ -66,6 +67,7 @@
 ## 🏷️ v2.4 — 전조 감지 정밀도 개선 및 코드 품질 강화 (2026-06-25)
 
 ### 주요 개선 사항
+
 1. **🔴 치명적 버그 수정: Signal 감지 순서 교정**
    - `main.py`에서 `detect_early_signals()`가 스케일링(비율→실제 건수 변환) **이후**에 호출되어, Config의 기준값(`min_current_volume=100`)이 사실상 무의미해지던 버그 수정
    - `/api/predict`와 `/api/predict-keyword` 두 엔드포인트 모두에서 **스케일링 전에 원본 비율값(0~100)으로 Signal을 먼저 감지**한 뒤, Signal 내부의 volume 값만 나중에 스케일링하도록 순서 교정
@@ -93,6 +95,7 @@
 ## 🏷️ v2.3 — 유행 전조 감지 레이어 추가 (2026-06-25)
 
 ### 주요 개선 사항
+
 1. **조기 경보 감지 모듈 분리 추가**
    - `pipeline/services/early_signal_detector.py`를 새로 추가하여 Prophet 예측과 독립적인 유행 전조 감지 레이어를 구성
    - `EarlySignalConfig`에 threshold, cooldown, breakout horizon 등을 모아 언제든 수정/삭제하기 쉽게 분리
@@ -124,9 +127,9 @@
    - 기존 `changepoint_prior_scale=0.01`, 조건부 연간 계절성 정책은 유지하여 급격한 과적합을 계속 억제
 3. **백테스트 지표 확장**
    - 기존 MAPE/정확도 외에 `SMAPE`, `MAE`, 방향성 정확도(`directionAccuracy`)를 추가
-     - *`SMAPE` (대칭 평균 절대 백분율 오차)*: 검색량이 적을 때 오차율이 과도하게 뻥튀기되는 기존 MAPE의 단점을 보완한 지표입니다.
-     - *`MAE` (평균 절대 오차)*: 퍼센트(%)가 아닌 "실제 검색량 수치(건수)"가 평균적으로 얼마나 차이 났는지 보여주는 직관적인 지표입니다.
-     - *방향성 정확도 (`directionAccuracy`)*: 검색량이 내일 오를지 내릴지, 그 '추세의 방향'을 맞춘 확률(%)을 의미합니다.
+     - _`SMAPE` (대칭 평균 절대 백분율 오차)_: 검색량이 적을 때 오차율이 과도하게 뻥튀기되는 기존 MAPE의 단점을 보완한 지표입니다.
+     - _`MAE` (평균 절대 오차)_: 퍼센트(%)가 아닌 "실제 검색량 수치(건수)"가 평균적으로 얼마나 차이 났는지 보여주는 직관적인 지표입니다.
+     - _방향성 정확도 (`directionAccuracy`)_: 검색량이 내일 오를지 내릴지, 그 '추세의 방향'을 맞춘 확률(%)을 의미합니다.
    - 낮은 검색량 키워드에서 MAPE만 과도하게 흔들리는 문제를 보완
 4. **Rolling Backtest 추가**
    - 최근 15일 단일 holdout 평가에 더해 최대 3개 구간 rolling backtest 요약을 제공
@@ -244,3 +247,347 @@
 ## 📌 이전 버전 참고
 
 초창기(v1.0) 설계 문서는 [`AGENT_INSTRUCTIONS.md`](./AGENT_INSTRUCTIONS.md)를 참고하세요.
+
+## 2026-06-25
+
+1. Backend 파일 내부 check.ipynb 파일에 메타 api 직접 연결
+2. api 에서 가져온 데이터 날짜, 시간 별로 데이터 저장을 위해서 캐시 설정 및 api 호출 횟수 줄이는 우회 경로 코드 작성
+
+예상 구조도
+Backend/
+│
+├── key/
+│ └── .env
+│
+├── cache/
+│ ├── hashtag_cache.json # keyword → hashtag_id
+│ └── media_cache/ # 최근 수집 시간
+│ ├── 황치즈.json
+│ ├── 말차.json
+│ └── ...
+│
+├── data/
+│ ├── 2026-06-26.json
+│ ├── 2026-06-27.json
+│ └── ...
+│
+└── instagram_collector.py 3. 백엔드 및 프론트엔드 분리 구현 계획
+현재 프로젝트(Trend)는 FastAPI 백엔드 코드와 정적 HTML/CSS/JS 프론트엔드 파일이 루트 폴더와 static 폴더에 혼재되어 있습니다. 또한 백엔드 모듈 일부가 루트에 있고, 일부가 Backend/ 폴더에 나누어져 있어서 구조가 직관적이지 못합니다. 이를 백엔드(Backend)와 프론트엔드(Frontend)로 명확히 분리하여 독립적인 구동 및 관리가 가능하도록 개선하고자 합니다.
+
+제안하는 디렉토리 구조
+
+Trend/
+├── Backend/ # 백엔드 관련 파일 및 폴더 일체
+│ ├── pipeline/ # 기존 pipeline 폴더 이동 (스케줄러, 데이터 수집)
+│ ├── datasets/ # 기존 datasets 폴더 이동 (데이터 캐시, CSV)
+│ ├── key/ # 기존 key 폴더 (.env 환경 변수 파일 포함)
+│ ├── main.py # 최종 백엔드 엔트리포인트 (기존 main.py와 backend.py 병합)
+│ ├── forecaster.py # 분석 및 예측 로직
+│ ├── naver_api.py # 네이버 트렌드 API 연동
+│ ├── naver_ad_api.py # 네이버 검색 광고 API 연동
+│ ├── meta_api.py # 메타 광고 API 연동
+│ ├── get_cid.py # 유틸리티 스크립트
+│ ├── get_naver_popular.py # 유틸리티 스크립트
+│ ├── get_rank.py # 유틸리티 스크립트
+│ ├── test_api.py # 테스트 스크립트
+│ ├── test_cid.py # 테스트 스크립트
+│ ├── requirements.txt # 백엔드 의존성 패키지
+│ └── (기타 캐시 파일 등)
+│
+└── Frontend/ # 프론트엔드 관련 파일 및 폴더 일체
+├── index.html # 대시보드 화면
+├── css/ # 스타일시트 폴더
+└── js/ # 자바스크립트 폴더 (API 호출 주소 수정)
+├── app.js
+└── chart-helper.js
+주요 작업 항목
+
+1. 백엔드(Backend) 디렉토리 구성
+   파일 이동: 루트에 흩어져 있는 파이썬 파일(\*.py)과 백엔드 디렉토리(pipeline/, datasets/)를 Backend/ 폴더 내부로 이동시킵니다.
+   백엔드 소스코드 병합 및 수정:
+   기존 main.py와 Backend/backend.py는 둘 다 FastAPI 앱을 띄우는 파일입니다. 두 파일의 엔드포인트를 하나로 통합하여 Backend/main.py로 단일화합니다. (특히 backend.py에 추가되었던 /api/meta-accounts 엔드포인트와 main.py에 있던 Prophet 예측/백테스트 엔드포인트를 병합합니다.)
+   백엔드에서 더 이상 프론트엔드 정적 파일(static/)을 마운트하여 서빙하지 않도록 정적 파일 서빙 코드(StaticFiles, FileResponse 등)를 제거합니다.
+   기존 파이썬 파일들이 상위 폴더를 참조하기 위해 사용하던 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(**file**)))) 같은 경로 조작 로직을 제거하거나 로컬 패스에 맞춰 단순화합니다.
+   정리 및 삭제: 중복되는 Backend/backend.py는 병합 완료 후 삭제합니다.
+2. 프론트엔드(Frontend) 디렉토리 구성
+   폴더명 변경: 기존 static/ 폴더를 Frontend/로 이름을 변경합니다.
+   API 호출 경로 수정:
+   Frontend/js/app.js에서 기존에는 동일 서버 내에서 제공됨을 전제로 상대 경로(/api/predict, /api/velocity-ranking, /api/weak-signals 등)를 통해 API를 호출하고 있었습니다.
+   이를 백엔드 서버의 절대 주소(예: http://localhost:8000)를 바라보도록 수정합니다.
+   파일 상단에 const API_BASE_URL = 'http://localhost:8000';을 선언하고, 모든 fetch 함수가 ${API_BASE_URL}/api/...를 호출하게 수정합니다.
+   직접 file:// 프로토콜로 index.html을 열어 테스트할 수 있도록 app.js 내부의 file:// 차단 방어 코드를 비활성화하거나 수정합니다.
+3. 연동 및 CORS 설정 확인
+   백엔드와 프론트엔드의 포트 또는 도메인이 분리되므로 브라우저에서 CORS 문제가 발생할 수 있습니다.
+   FastAPI 백엔드의 CORSMiddleware가 allow_origins=["*"]로 열려 있는 것을 확인했으므로, 프론트엔드 단독 구동 시에도 문제없이 백엔드 API를 호출할 수 있습니다.
+   검증 계획 (Verification Plan)
+   수동 검증
+   백엔드 서버 실행: Backend 폴더로 이동하여 백엔드 서버를 구동합니다.
+   bash
+
+cd Backend
+python main.py
+서버가 http://127.0.0.1:8000에서 정상적으로 작동하는지 확인합니다.
+프론트엔드 실행 및 API 연동 테스트: Frontend/index.html을 브라우저로 직접 열거나 로컬 웹 서버(예: Live Server, Python SimpleHTTPServer)로 실행합니다.
+메인 대시보드 화면이 깨짐 없이 잘 나오는지 확인합니다.
+키워드 분석을 실행하여 백엔드 API(http://localhost:8000/api/predict)와 통신하고 차트 및 예측 데이터가 잘 그려지는지 확인합니다.
+가속도 랭킹 및 AI Weak Signal 리스트가 제대로 수집/렌더링되는지 확인합니다.
+
+실행 방법
+🚀 실행 방법 (상세 가이드)
+(PowerShell 사용 시 필수) 스크립트 실행 권한 허용
+Windows PowerShell에서는 기본적으로 가상환경 스크립트 실행이 차단되어 있을 수 있습니다. 터미널에 아래 명령어를 복사하여 붙여넣고 엔터를 칩니다.
+
+powershell
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope Process
+(이 명령은 현재 열려 있는 터미널 창에 한해 가상환경 활성화 권한을 임시로 부여합니다.)
+
+1. 가상환경 활성화
+   내가 사용하는 터미널 종류에 맞게 아래 명령어를 입력합니다. (성공하면 경로 앞에 (venv)라는 표시가 붙습니다.)
+
+PowerShell을 사용 중인 경우:
+powershell
+.\venv\Scripts\Activate.ps1
+CMD(명령 프롬프트)를 사용 중인 경우:
+cmd
+.\venv\Scripts\activate.bat 2. 필요한 라이브러리(패키지) 설치
+가상환경이 활성화된 상태 (venv)에서 아래 명령어를 입력하여 Prophet 모델 및 FastAPI 등 필요한 패키지들을 모두 설치합니다.
+
+powershell
+pip install -r Backend/requirements.txt
+⚠️ 참고 (Prophet 설치 에러 대처법):
+만약 설치 중 에러가 발생한다면 pip install --upgrade pip로 pip를 업데이트한 후 pip install prophet을 개별적으로 실행해 보세요.
+
+3단계: 백엔드 API 서버 구동
+라이브러리 설치가 끝나면 백엔드 폴더로 이동해 서버를 기동합니다. (가상환경 활성화 상태 유지)
+
+백엔드 폴더로 이동:
+powershell
+cd Backend
+FastAPI 서버 구동:
+powershell
+python main.py
+터미널에 다음과 같은 문구가 뜨면 백엔드가 http://127.0.0.1:8000 주소로 완벽히 켜진 것입니다.
+text
+INFO: Started server process [XXXX]
+INFO: Waiting for application startup.
+INFO: Application startup complete.
+INFO: Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+IMPORTANT
+
+이 터미널 창은 백엔드 서버가 켜져 있는 창이므로 그대로 켜두셔야 합니다. 다른 명령어를 치려면 새 터미널 창을 하나 더 열어야 합니다.
+
+4단계: 프론트엔드 대시보드 실행 (3가지 방법 중 택 1)
+백엔드 서버가 켜진 상태에서 프론트엔드를 실행하는 방법입니다. 편한 방식을 선택해 보세요.
+
+[방법 A] VS Code의 Live Server 사용 (가장 추천 👍)
+VS Code 좌측 파일 탐색기에서 Frontend 폴더 아래의 index.html 파일을 마우스 우클릭합니다.
+**[Open with Live Server]**를 클릭합니다. (VS Code 화면 우측 하단의 [Go Live] 버튼을 클릭해도 됩니다.)
+브라우저가 자동으로 열리며 http://127.0.0.1:5500/index.html 주소로 대시보드가 실행됩니다.
+[방법 B] 파이썬 간이 웹 서버 띄우기
+VS Code에서 **새 터미널(New Terminal)**을 하나 더 엽니다.
+프론트엔드 폴더로 이동합니다:
+powershell
+cd Frontend
+파이썬 기본 웹 서버를 구동합니다:
+powershell
+python -m http.server 5500
+크롬 등 인터넷 브라우저 주소창에 http://127.0.0.1:5500 을 입력하여 접속합니다.
+
+## 2026-06-28
+
+기상청 날씨 데이터 연동 및 트렌드 결합 시각화 구현 계획
+기상청 종관기상관측(ASOS) 일자료 오픈 API를 연동하여, 평균 기온 및 강수량 데이터를 네이버 트렌드 데이터와 함께 분석하고 시각화할 수 있는 기능을 추가하고자 합니다.
+
+단위가 다른 두 데이터(검색량 vs 기온/강수량)를 효과적으로 대조하기 위해 이중 Y축(Dual Y-Axis) 차트로 표현합니다.
+
+User Review Required
+기상 데이터는 측정 지역(지점)이 필수적입니다.
+
+기본 기상 관측소 지점은 **서울(지점 번호: 108)**을 디폴트로 설정하여 전국 표준 대조군으로 삼겠습니다.
+차트 시각화 시, 검색량은 좌측 Y축, 기온/강수량은 우측 Y축에 대응시키고 켜고 끌 수 있는 스위치를 프론트엔드에 추가하겠습니다.
+Proposed Changes
+
+1. 백엔드 (Backend)
+   [NEW]
+   weather_api.py
+   공공데이터포털(data.go.kr) 기상청 단기/종관기상관측 일자료 API를 호출하는 서비스 모듈을 생성합니다.
+   .env 파일의 ASOS_ENDPOINT 및 DATA_GO_KEY를 로드하여 동작합니다.
+   fetch_weather_data(start_date: str, end_date: str, stn_id: str = "108") 함수를 구현합니다.
+   요청 날짜 포맷 변환 (YYYY-MM-DD ➔ YYYYMMDD)
+   dataType: "JSON", dataCd: "ASOS", dateCd: "DAY" 파라미터 구성
+   비동기 httpx.AsyncClient 호출
+   JSON 응답에서 날짜(tm), 평균기온(avgTa), 일강수량(sumRn) 리스트 추출 및 반환
+   공공데이터포털 트래픽 초과나 인증 오류 발생 시 앱이 마비되지 않도록 예외 처리 후 빈 데이터 반환 안전망 구축
+   [MODIFY]
+   main.py
+   기상청 API 연동 모듈을 불러옵니다: from weather_api import fetch_weather_data
+   트렌드 비교 예측 API 엔드포인트 /api/predict (POST)를 수정합니다.
+   네이버 데이터랩 트렌드를 가져올 때 기상청 API도 함께 병렬(asyncio.gather 등)로 조회합니다.
+   API의 최종 JSON 응답 포맷에 날짜별 날씨 데이터 리스트 weather 키를 통합하여 반환합니다.
+   json
+
+"weather": [
+{"period": "2023-06-25", "avgTa": 24.5, "sumRn": 0.0},
+...
+] 2. 프론트엔드 (Frontend)
+[MODIFY]
+index.html
+사이드바 또는 차트 상단 영역에 기상 데이터를 차트에 겹쳐볼 수 있는 옵션 스위치 UI를 추가합니다.
+평균 기온 표시 (°C)
+일 강수량 표시 (mm)
+[MODIFY]
+chart-helper.js
+ApexCharts 렌더링 구조를 이중 Y축(multi-yaxis) 옵션으로 업그레이드합니다.
+첫 번째 Y축 (좌측): 네이버 트렌드 검색량 수치 (0 ~ Max)
+두 번째 Y축 (우측): 평균 기온 (-20 ~ 40) 또는 강수량 (0 ~ Max)
+기상 변수가 체크되면 차트 데이터 시리즈(Series)에 추가하고, 체크 해제 시 제거하여 실시간 인터랙션을 지원합니다.
+기온은 얇은 보라색/오렌지색 **실선(Line)**으로, 강수량은 연한 하늘색 **막대(Column)**로 겹쳐 띄워 시각적 간섭을 최소화합니다.
+[MODIFY]
+app.js
+/api/predict가 내려준 기상 데이터를 글로벌 변수나 인스턴스 멤버에 바인딩하여 보관합니다.
+기상 관측 스위치를 조작할 때마다 chartHelper 인스턴스의 차트 갱신 메서드를 재호출하는 핸들러를 바인딩합니다.
+Verification Plan
+Automated/Manual Verification
+백엔드 단위 테스트: weather_api.py를 단독 실행하여 공공데이터포털로부터 서울(108) 지점 날씨 데이터가 JSON으로 파싱되어 올바르게 출력되는지 검증합니다.
+이중 축 연동 차트 검증:
+http://localhost:5500에 접속하여 '식품' 관련 키워드 그룹(예: '아이스크림', '호빵')을 조회합니다.
+차트에서 '평균 기온 표시' 스위치를 켰을 때, 한여름(기온 30도 이상)에 아이스크림 검색량이 오르고, 겨울에 호빵 검색량이 오르는 경향성이 차트 한 화면 상에서 이중 축으로 정상 매칭되는지 눈으로 확인합니다.
+
+2026-06-28
+폼 예측 블라인드 해제, 기본 4개월 줌 및 네이버 밝은 초록색 테마 적용 계획
+사용자가 키워드를 직접 입력하고 분석을 실행할 때 발생하는 차트 가림 현상과 로딩 중 키워드 불일치 버그를 핫픽스하고, 날씨 옵션 기본 활성화, 디폴트 4개월 줌 화면 포커싱, 그리고 과거 트렌드 꺾은선을 네이버 공식색보다 밝고 선명한 초록색으로 커스터마이징합니다.
+
+User Review Required
+IMPORTANT
+
+폼 실행 시 차트 가림막 걷기 패치:
+폼 서브밋 핸들러 완료 시점에 차트 가림막(#chart-placeholder)이 완벽히 가려지도록(display = 'none') 조치하여 차트 블라인드 현상을 해결합니다.
+로딩 중 사용자 입력 키워드 동적 매핑:
+분석 로딩 창이 뜰 때 사용자가 입력한 그룹명/키워드가 동적으로 출력되도록 수정합니다.
+평균 기온 / 강수량 기본 체크 상태 설정:
+대시보드 최초 로딩 시 날씨 체크박스 2종이 기본적으로 checked 상태로 표기되게 HTML 속성을 부여합니다.
+차트 기본 조회 화면 4개월치 설정:
+최초 렌더링 시 줌아웃 상태(10년 전체) 대신 최근 4개월(120일) 구간으로 줌인하여 가장 트렌디한 최근 동향을 1차적으로 조명하고, 줌인/줌아웃 버튼을 통한 거시/미시 스팬 조절은 동일하게 제공합니다.
+과거 트렌드 초록색 테마 적용:
+과거 트렌드 관심도 선을 네이버 공식 그린(#03c75a)보다 조금 더 밝고 선명한 **비비드 초록색 (#02e06b)**으로 전면 전환하여 시인성을 높이고 네이버 데이터랩 본연의 아이덴티티를 극대화합니다.
+Proposed Changes
+
+1. 프론트엔드 (Frontend)
+   [MODIFY]
+   index.html
+   평균 기온 및 일강수량 체크박스 인풋에 checked 기본 속성을 추가합니다.
+   #chk-weather-temp: <input type="checkbox" id="chk-weather-temp" checked ...>
+   #chk-weather-rain: <input type="checkbox" id="chk-weather-rain" checked ...>
+   [MODIFY]
+   chart-helper.js
+   네이버 트렌드 초록색 테마 변경:
+   팔레트 색상 배열 this.colors의 첫 번째 색상을 밝은 초록색인 #02e06b 로 변경합니다.
+   첫 번째 페이드 컬러 this.colorsFade 도 그에 걸맞게 rgba(2, 224, 107, 0.25) 로 갱신합니다.
+   dropShadow의 색상을 첫 번째 활성 라인색(strokeColors[0]인 밝은 초록색)에 맞추어 그림자가 더 아름답게 연출되도록 유지합니다.
+   디폴트 줌 범위 4개월(120일) 변경:
+   renderChart 의 최초 줌 스팬 연산 기준을 365일에서 **120일**로 축소하여 시작화면을 4개월 기준으로 조준 렌더링합니다.
+   [MODIFY]
+   app.js
+   분석 폼 서브밋 핸들러(forecastForm) 보완:
+   폼 실행 시 로딩바의 메시지를 고정 키워드가 아닌 사용자가 입력한 첫 번째 그룹명/키워드를 반영하여 "[그룹명] 분석 수행 중..." 형태로 동적 렌더링합니다.
+   API 통신 완료 시점에 #chart-placeholder를 반드시 가리도록(style.display = 'none') 누락된 분기를 패치합니다.
+   Verification Plan
+   수동 검증
+   분석 폼 실행 및 로딩/블라인드 해제 확인:
+   검색창에 키워드를 직접 치고 "분석 실행"을 누르면, 로딩 창에 내가 입력한 키워드가 명확히 표시되는지 확인합니다.
+   로딩이 끝난 즉시 차트 가림막이 사라지고 선명한 그래프가 차트판에 온전히 팝업되는지 확인합니다.
+   기본 4개월 줌 상태 확인:
+   차트가 로드되자마자 4개월(약 120일) 구간만 확대해서 표시하는지 확인합니다.
+   네이버 밝은 초록색 선 시인성 대조:
+   과거 트렌드 선이 네이버 공식 브랜드 컬러보다 화사하고 밝은 초록색(#02e06b)으로 선명하게 수 놓아지는지 확인합니다.
+
+## 추가 변경 사항
+
+메타버스 기본 비교 그룹 제거 및 주황색 전조 포인트 소거 계획
+대시보드 최초 진입 및 폼 실행 시 불필요하게 날아오던 메타버스(그룹 2) 과거 데이터를 차단하기 위해 기본 마크업에서 메타버스 필드를 제거하고, 차트 위를 어지럽히던 주황색/빨간색 유행 전조 시그널 마커(Annotations)를 제거하여 깨끗한 꺾은선 뷰를 완성합니다.
+
+User Review Required
+IMPORTANT
+
+메타버스(그룹 2) 기본 필드 제거:
+index.html 의 기본 키워드 비교 그룹 중 "메타버스"로 자동 지정되어 있던 그룹 2 마크업을 완전히 소거합니다.
+첫 페이지 진입 시에는 오직 사용자가 원하는 단일 키워드(그룹 1)만 표시되게 하여, 혼선과 불필요한 과거 데이터 조회를 완전히 차단합니다.
+사용자가 원할 경우 기존의 "+ 키워드 그룹 추가" 버튼을 통해 그룹을 동적으로 늘려 비교해 볼 수 있는 유연성은 그대로 유지합니다.
+차트 주황색/빨간색 전조 포인트(Annotations) 소거:
+chart-helper.js 에서 검색량 변화 구간 위에 주황색/빨간색 도트로 달라붙던 signalAnnotations 생성을 영구 비활성화하여, 깔끔하고 시인성이 극대화된 꺾은선 그래프 본연의 화면을 보여줍니다.
+Proposed Changes
+
+1. 프론트엔드 (Frontend)
+   [MODIFY]
+   index.html
+   keyword-groups-container 하위에 기본으로 기입되어 있던 Group 2 (메타버스 입력 영역)를 전면 삭제합니다.
+   [MODIFY]
+   chart-helper.js
+   renderChart 함수 내의 signals.forEach(...) 루프 동작을 주석 처리 또는 제거하여 signalAnnotations 배열로 좌표가 주입되지 않게 처리합니다.
+   Verification Plan
+   수동 검증
+   기본 키워드 필드 확인:
+   화면을 새로고침했을 때 왼쪽 사이드바 비교 그룹에 메타버스 관련 그룹 2가 기본적으로 비워진 채 그룹 1만 단독으로 나타나는지 확인합니다.
+   차트 내 어노테이션 포인트 소멸 확인:
+   키워드를 클릭하거나 조회했을 때, 꺾은선 중간중간에 나타나던 눈에 거슬리는 주황색/빨간색 포인트 도트와 텍스트 라벨이 완벽히 사라졌는지 확인합니다.
+
+실행 방법
+🚀 실행 방법 (상세 가이드)
+(PowerShell 사용 시 필수) 스크립트 실행 권한 허용
+Windows PowerShell에서는 기본적으로 가상환경 스크립트 실행이 차단되어 있을 수 있습니다. 터미널에 아래 명령어를 복사하여 붙여넣고 엔터를 칩니다.
+
+powershell
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope Process
+(이 명령은 현재 열려 있는 터미널 창에 한해 가상환경 활성화 권한을 임시로 부여합니다.)
+
+1. 가상환경 활성화
+   내가 사용하는 터미널 종류에 맞게 아래 명령어를 입력합니다. (성공하면 경로 앞에 (venv)라는 표시가 붙습니다.)
+
+PowerShell을 사용 중인 경우:
+powershell
+.\venv\Scripts\Activate.ps1
+CMD(명령 프롬프트)를 사용 중인 경우:
+cmd
+.\venv\Scripts\activate.bat 2. 필요한 라이브러리(패키지) 설치
+가상환경이 활성화된 상태 (venv)에서 아래 명령어를 입력하여 Prophet 모델 및 FastAPI 등 필요한 패키지들을 모두 설치합니다.
+
+powershell
+pip install -r Backend/requirements.txt
+⚠️ 참고 (Prophet 설치 에러 대처법):
+만약 설치 중 에러가 발생한다면 pip install --upgrade pip로 pip를 업데이트한 후 pip install prophet을 개별적으로 실행해 보세요.
+
+3단계: 백엔드 API 서버 구동
+라이브러리 설치가 끝나면 백엔드 폴더로 이동해 서버를 기동합니다. (가상환경 활성화 상태 유지)
+
+백엔드 폴더로 이동:
+powershell
+cd Backend
+FastAPI 서버 구동:
+powershell
+python main.py
+터미널에 다음과 같은 문구가 뜨면 백엔드가 http://127.0.0.1:8000 주소로 완벽히 켜진 것입니다.
+text
+INFO: Started server process [XXXX]
+INFO: Waiting for application startup.
+INFO: Application startup complete.
+INFO: Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+IMPORTANT
+
+이 터미널 창은 백엔드 서버가 켜져 있는 창이므로 그대로 켜두셔야 합니다. 다른 명령어를 치려면 새 터미널 창을 하나 더 열어야 합니다.
+
+4단계: 프론트엔드 대시보드 실행 (3가지 방법 중 택 1)
+백엔드 서버가 켜진 상태에서 프론트엔드를 실행하는 방법입니다. 편한 방식을 선택해 보세요.
+
+[방법 A] VS Code의 Live Server 사용 (가장 추천 👍)
+VS Code 좌측 파일 탐색기에서 Frontend 폴더 아래의 index.html 파일을 마우스 우클릭합니다.
+**[Open with Live Server]**를 클릭합니다. (VS Code 화면 우측 하단의 [Go Live] 버튼을 클릭해도 됩니다.)
+브라우저가 자동으로 열리며 http://127.0.0.1:5500/index.html 주소로 대시보드가 실행됩니다.
+[방법 B] 파이썬 간이 웹 서버 띄우기
+VS Code에서 **새 터미널(New Terminal)**을 하나 더 엽니다.
+프론트엔드 폴더로 이동합니다:
+powershell
+cd Frontend
+파이썬 기본 웹 서버를 구동합니다:
+powershell
+python -m http.server 5500
+크롬 등 인터넷 브라우저 주소창에 http://127.0.0.1:5500 을 입력하여 접속합니다.
