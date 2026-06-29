@@ -279,9 +279,6 @@ async def predict_single_keyword(payload: PredictKeywordRequest):
 
         import asyncio
         
-        # 기상 데이터는 10년 치를 다 가져올 필요가 없으므로 최근 1년(365일)치만 조회하도록 최적화
-        weather_start_date_str = (end_date - timedelta(days=365)).strftime("%Y-%m-%d")
-        
         naver_task = fetch_naver_trend(
             start_date=start_date_str,
             end_date=end_date_str,
@@ -289,7 +286,7 @@ async def predict_single_keyword(payload: PredictKeywordRequest):
             keyword_groups=[{"groupName": payload.keyword, "keywords": [payload.keyword]}]
         )
         weather_task = fetch_weather_data(
-            start_date=weather_start_date_str,
+            start_date=start_date_str,
             end_date=end_date_str
         )
         
