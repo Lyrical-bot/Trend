@@ -493,3 +493,45 @@ Proposed Changes
    화면을 새로고침했을 때 왼쪽 사이드바 비교 그룹에 메타버스 관련 그룹 2가 기본적으로 비워진 채 그룹 1만 단독으로 나타나는지 확인합니다.
    차트 내 어노테이션 포인트 소멸 확인:
    키워드를 클릭하거나 조회했을 때, 꺾은선 중간중간에 나타나던 눈에 거슬리는 주황색/빨간색 포인트 도트와 텍스트 라벨이 완벽히 사라졌는지 확인합니다.
+
+실행 방법
+🚀 실행 방법 (상세 가이드)
+(PowerShell 사용 시 필수) 스크립트 실행 권한 허용
+Windows PowerShell에서는 기본적으로 가상환경 스크립트 실행이 차단되어 있을 수 있습니다. 터미널에 아래 명령어를 복사하여 붙여넣고 엔터를 칩니다.
+
+powershell
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope Process
+(이 명령은 현재 열려 있는 터미널 창에 한해 가상환경 활성화 권한을 임시로 부여합니다.)
+
+1. 가상환경 활성화
+   내가 사용하는 터미널 종류에 맞게 아래 명령어를 입력합니다. (성공하면 경로 앞에 (venv)라는 표시가 붙습니다.)
+
+PowerShell을 사용 중인 경우:
+powershell
+.\venv\Scripts\Activate.ps1
+CMD(명령 프롬프트)를 사용 중인 경우:
+cmd
+.\venv\Scripts\activate.bat 2. 필요한 라이브러리(패키지) 설치
+가상환경이 활성화된 상태 (venv)에서 아래 명령어를 입력하여 Prophet 모델 및 FastAPI 등 필요한 패키지들을 모두 설치합니다.
+
+powershell
+pip install -r Backend/requirements.txt
+⚠️ 참고 (Prophet 설치 에러 대처법):
+만약 설치 중 에러가 발생한다면 pip install --upgrade pip로 pip를 업데이트한 후 pip install prophet을 개별적으로 실행해 보세요.
+
+3단계: 백엔드 API 서버 구동
+라이브러리 설치가 끝나면 백엔드 폴더로 이동해 서버를 기동합니다. (가상환경 활성화 상태 유지)
+
+백엔드 폴더로 이동:
+powershell
+cd Backend
+FastAPI 서버 구동:
+powershell
+python main.py
+터미널에 다음과 같은 문구가 뜨면 백엔드가 http://127.0.0.1:8000 주소로 완벽히 켜진 것입니다.
+text
+INFO: Started server process [XXXX]
+INFO: Waiting for application startup.
+INFO: Application startup complete.
+INFO: Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+IMPORTANT
