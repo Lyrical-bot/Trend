@@ -13,11 +13,12 @@ import random
 load_dotenv()
 API_KEY = os.getenv("YOUTUBE_API_KEY")
 
+# 유튜브 API 클라이언트 초기화 (키가 없으면 에러를 뿜지 않고 수집 기능만 스킵)
 if not API_KEY:
-    raise ValueError(".env 파일에 YOUTUBE_API_KEY가 설정되지 않았습니다.")
-
-# 유튜브 API 클라이언트 초기화
-youtube = build('youtube', 'v3', developerKey=API_KEY)
+    print("[Warning] .env 파일에 YOUTUBE_API_KEY가 설정되지 않아 YouTube 영상 수집 기능이 비활성화됩니다.")
+    youtube = None
+else:
+    youtube = build('youtube', 'v3', developerKey=API_KEY)
 
 # 식품/디저트 전용 시드 키워드 풀
 FOOD_SEED_KEYWORDS = [
@@ -31,6 +32,9 @@ def fetch_youtube_videos(max_results: int = 20) -> list:
     랜덤 시드 키워드로 유튜브 영상을 검색하여 반환합니다.
     (API Quota 절약을 위해 한 번 호출 시 max_results 만큼만 가져옵니다)
     """
+    if not youtube:
+        return []
+        
     # 시드 키워드 중 랜덤으로 1~2개를 섞어 검색 쿼리 생성
     seed = random.sample(FOOD_SEED_KEYWORDS, 1)[0]
     search_query = seed

@@ -1,4 +1,10 @@
 import os
+from dotenv import load_dotenv
+
+# 전역 환경변수 .env 로드
+dotenv_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "key", ".env")
+load_dotenv(dotenv_path=dotenv_path)
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
