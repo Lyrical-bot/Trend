@@ -229,6 +229,12 @@ document.addEventListener('DOMContentLoaded', () => {
         if (gender) payload.gender = gender;
         if (ages.length > 0) payload.ages = ages;
 
+        // 기상 변수 반영 옵션 파싱
+        const useTemp = document.getElementById('use-temp') ? document.getElementById('use-temp').checked : true;
+        const useRain = document.getElementById('use-rain') ? document.getElementById('use-rain').checked : true;
+        payload.use_temp = useTemp;
+        payload.use_rain = useRain;
+
         try {
             const response = await fetch(`${API_BASE_URL}/api/predict`, {
                 method: 'POST',
@@ -662,18 +668,22 @@ window.fetchSingleKeywordForecast = async function (keyword) {
         if (btLoadingMsg) btLoadingMsg.innerHTML = `<strong>${keyword}</strong> 1년치 과거 데이터 분할 백테스트 수행 중...`;
     }
 
+    // 기상 변수 반영 옵션 파싱
+    const useTemp = document.getElementById('use-temp') ? document.getElementById('use-temp').checked : true;
+    const useRain = document.getElementById('use-rain') ? document.getElementById('use-rain').checked : true;
+
     try {
         // 두 개의 API 병렬 호출
         const [predictResponse, evaluateResponse] = await Promise.all([
             fetch(`${API_BASE_URL}/api/predict-keyword`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ keyword: keyword, forecastSteps: 30 })
+                body: JSON.stringify({ keyword: keyword, forecastSteps: 30, use_temp: useTemp, use_rain: useRain })
             }),
             fetch(`${API_BASE_URL}/api/evaluate-keyword`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ keyword: keyword })
+                body: JSON.stringify({ keyword: keyword, use_temp: useTemp, use_rain: useRain })
             })
         ]);
 

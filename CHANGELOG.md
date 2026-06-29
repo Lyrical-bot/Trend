@@ -615,6 +615,69 @@ Automated Tests
 Manual Verification
 Azure PostgreSQL 커넥션을 연결하고 서버를 재구동한 뒤 테이블들이 자동으로 매핑 생성(DB 마이그레이션)되는지 검사하고, 대시보드에서 분석 결과가 DB에 정상 적재/조회되는지 테스트합니다.
 
+## 2026-06-29 추가 수정내용
+
+기온 및 강수량 체크박스 기반 날씨 피처 조건부 Prophet 학습 구현 계획
+사용자가 프론트엔드 UI에서 "평균 기온" 및 "강수량" 체크박스를 조작함에 따라, 백엔드가 날씨 변수를 조건부로 병합하여 시계열 학습을 수행하고 예측/백테스트 그래프를 유동적으로 리프레시하도록 아키텍처를 개편합니다.
+
+1. 개요 및 설계
+   기온/강수량 체크박스 상태 추가
+   use_temp, use_rain 페이로드 실어 전송
+   요청 모델 파싱 및 인자 전달
+   use_temp/use_rain 여부에 따라 add_regressor 분기 학습
+   Frontend: index.html
+   Frontend: app.js
+   Backend: main.py API
+   Backend: forecaster.py
+   Facebook Prophet AI 모델
+   체크박스 상태 = True:
+   기존대로 기온 및 강수량 데이터를 Prophet 학습 시 add_regressor를 통해 외부 설명 변수로 결합합니다.
+   체크박스 상태 = False:
+   기상 데이터를 제외하고, 오직 네이버 검색 트렌드 데이터(ds, y)만으로 순수 Prophet 시계열 모델링을 피팅합니다.
+2. 변경 대상 파일 및 상세 설계
+   [Frontend]
+3. index.html
+   (UI 컴포넌트 추가)
+   변경 위치: 분석 단위 / 예측 기간 선택 섹션 하단 (
+   L89
+   )
+   추가 내용: "평균 기온 반영", "강수량 반영"을 켜고 끌 수 있는 체크박스 그룹 (#use-temp, #use-rain) 추가.
+4. app.js
+   (API 연동)
+   변경 위치 1: btn-submit 클릭 시의 비교 예측 파트 (
+   L227-L232
+   )
+   변경 위치 2: 상세 키워드 모달 클릭 시의 단일 예측 및 백테스트 파트 (
+   L665-L678
+   )
+   추가 내용: 각 API 요청 본문(JSON)에 use_temp 및 use_rain 체크 상태를 파라미터로 적재하여 백엔드로 전달.
+   [Backend]
+5. main.py
+   (요청 스키마 및 라우터 매핑)
+   변경 위치 1: Pydantic 요청 스키마 PredictRequest, PredictKeywordRequest 수정 (
+   L102-L115
+   )
+   변경 위치 2: 각 엔드포인트 핸들러 (predict_trend, predict_single_keyword, evaluate_single_keyword) 수정
+   추가 내용:
+   요청 객체 내에 use_temp: bool = True, use_rain: bool = True 파라미터 선언.
+   forecast_trend 및 evaluate_trend_accuracy 내부 코어 함수 호출 시 해당 플래그들을 인자로 전달.
+6. forecaster.py
+   (Prophet 결합 조건 분기 처리)
+   변경 위치 1: \_build_model, \_fit_model, \_predict_periods, \_rolling_backtest 서브 루틴 함수들의 매개변수 선언 및 로직 개편.
+   변경 위치 2: forecast_trend, evaluate_trend_accuracy 퍼블릭 인터페이스 API 수정.
+   수정 내용:
+   use_temp 및 use_rain 이 True이고 실제 과거 데이터프레임 내에 해당 칼럼이 있을 때만 Prophet에 Regressor로 동적 등록 (model.add_regressor).
+   학습 및 미래 30일 데이터 병합 시에도 설정된 변수만 기상 결합 및 미래 NaN 날씨 값(작년 동기 복사)을 보간 처리하도록 효율화.
+   리포트 요약의 modelUsed 문구를 사용 옵션에 따라 변경 (예: "Facebook Prophet (기온 변수 결합 모델)" 등).
+7. 검증 계획
+   자동화 통합 테스트
+   Backend/test_api.py
+   에서 use_temp, use_rain을 각각 켜고 껐을 때 호출 모델의 정상 컴파일 및 실행 완료 유무 테스트.
+   수동 기능 동작 테스트
+   브라우저에서 분석 사이트(http://localhost:3000)에 접속.
+   기온 반영 체크 켜기 + 강수량 끄기 ➡️ 예측 실행 ➡️ 요약 카드의 사용 모델명에 (기온 변수 결합 모델) 확인.
+   둘 다 끄기 ➡️ 예측 실행 ➡️ 요약 카드의 사용 모델명에 Facebook Prophet + IQR Smoothing 확인
+
 실행 방법
 🚀 실행 방법 (상세 가이드)
 (PowerShell 사용 시 필수) 스크립트 실행 권한 허용

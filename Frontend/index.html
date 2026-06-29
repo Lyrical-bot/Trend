@@ -87,6 +87,19 @@
                         </div>
                     </div>
 
+                    <!-- Weather Regressors Options -->
+                    <div class="form-section">
+                        <label class="form-label">기상 영향도 반영 (Prophet AI 학습)</label>
+                        <div style="display: flex; gap: 15px; margin-top: 5px;">
+                            <label class="check-label" style="font-size: 0.85rem; display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                                <input type="checkbox" id="use-temp" checked> 평균 기온 반영
+                            </label>
+                            <label class="check-label" style="font-size: 0.85rem; display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                                <input type="checkbox" id="use-rain" checked> 강수량 반영
+                            </label>
+                        </div>
+                    </div>
+
                     <!-- Filters -->
                     <div class="form-section accordion">
                         <div class="accordion-header" id="filter-accordion-toggle">

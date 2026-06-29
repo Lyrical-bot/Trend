@@ -108,10 +108,14 @@ class PredictRequest(BaseModel):
     gender: Optional[str] = Field(None, description="성별 구분 (f/m, 생략 시 전체)")
     ages: Optional[List[str]] = Field(None, description="연령대 목록 (생략 시 전체)")
     forecastSteps: int = Field(30, description="예측할 기간의 수 (일/주/월 단위)")
+    use_temp: Optional[bool] = Field(True, description="평균 기온 설명 변수 반영 여부")
+    use_rain: Optional[bool] = Field(True, description="강수량 설명 변수 반영 여부")
 
 class PredictKeywordRequest(BaseModel):
     keyword: str = Field(..., description="조회할 단일 키워드")
     forecastSteps: int = Field(30, description="예측할 기간(일)의 수")
+    use_temp: Optional[bool] = Field(True, description="평균 기온 설명 변수 반영 여부")
+    use_rain: Optional[bool] = Field(True, description="강수량 설명 변수 반영 여부")
 
 class EvaluateRequest(BaseModel):
     keyword: str = Field(..., description="백테스트할 단일 키워드")
@@ -174,7 +178,9 @@ async def predict_trend(payload: PredictRequest):
                 historical_data=historical,
                 time_unit=payload.timeUnit,
                 forecast_steps=payload.forecastSteps,
-                weather_data=weather_data
+                weather_data=weather_data,
+                use_temp=payload.use_temp,
+                use_rain=payload.use_rain
             )
 
             # --- 전조 감지: 스케일링 적용 전에 원본 비율값(0~100)으로 수행 ---
@@ -332,7 +338,9 @@ async def predict_single_keyword(payload: PredictKeywordRequest):
             historical_data=historical,
             time_unit="date",
             forecast_steps=payload.forecastSteps,
-            weather_data=weather_data
+            weather_data=weather_data,
+            use_temp=payload.use_temp,
+            use_rain=payload.use_rain
         )
 
         # --- 전조 감지: 스케일링 적용 전에 원본 비율값(0~100)으로 수행 ---
@@ -411,7 +419,9 @@ async def evaluate_single_keyword(payload: PredictKeywordRequest):
         evaluated_data, summary = evaluate_trend_accuracy(
             historical_data=historical,
             test_days=15,
-            weather_data=weather_data
+            weather_data=weather_data,
+            use_temp=payload.use_temp,
+            use_rain=payload.use_rain
         )
 
         # 스케일링 로직

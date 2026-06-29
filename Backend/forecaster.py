@@ -53,7 +53,7 @@ def _use_yearly_seasonality(df: pd.DataFrame) -> bool:
     data_span_days = (df['ds'].max() - df['ds'].min()).days
     return data_span_days >= 700
 
-def _build_model(time_unit: str, use_yearly: bool, add_regressors: bool = False) -> Prophet:
+def _build_model(time_unit: str, use_yearly: bool, use_temp: bool = True, use_rain: bool = True) -> Prophet:
     model = Prophet(
         daily_seasonality=False,
         weekly_seasonality=True if time_unit == 'date' else False,
@@ -62,8 +62,9 @@ def _build_model(time_unit: str, use_yearly: bool, add_regressors: bool = False)
         seasonality_prior_scale=5.0,
         holidays_prior_scale=2.0
     )
-    if add_regressors:
+    if use_temp:
         model.add_regressor('temp')
+    if use_rain:
         model.add_regressor('rain')
     try:
         model.add_country_holidays(country_name='KR')
@@ -71,7 +72,7 @@ def _build_model(time_unit: str, use_yearly: bool, add_regressors: bool = False)
         pass
     return model
 
-def _fit_model(df: pd.DataFrame, time_unit: str) -> Prophet:
+def _fit_model(df: pd.DataFrame, time_unit: str, use_temp: bool = True, use_rain: bool = True) -> Prophet:
     use_yearly = _use_yearly_seasonality(df)
     # 10년 치 데이터(계절성 있음)일 경우 정상적인 여름 피크가 아웃라이어로 잘려나가는 것을 방지
     if use_yearly:
@@ -79,8 +80,10 @@ def _fit_model(df: pd.DataFrame, time_unit: str) -> Prophet:
     else:
         train_df = _smooth_outliers(df)
     
-    add_regressors = 'temp' in train_df.columns and 'rain' in train_df.columns
-    model = _build_model(time_unit, use_yearly, add_regressors)
+    has_temp = use_temp and 'temp' in train_df.columns
+    has_rain = use_rain and 'rain' in train_df.columns
+    
+    model = _build_model(time_unit, use_yearly, use_temp=has_temp, use_rain=has_rain)
     model.fit(train_df)
     return model
 
@@ -124,46 +127,71 @@ def _calculate_metrics(y_true: List[float], y_pred: List[float]) -> Dict[str, fl
         "directionAccuracy": round(float(direction_accuracy), 2)
     }
 
-def _predict_periods(train_df: pd.DataFrame, periods: int, time_unit: str = 'date', weather_df: pd.DataFrame = None) -> pd.DataFrame:
-    model = _fit_model(train_df, time_unit)
+def _predict_periods(
+    train_df: pd.DataFrame, 
+    periods: int, 
+    time_unit: str = 'date', 
+    weather_df: pd.DataFrame = None,
+    use_temp: bool = True,
+    use_rain: bool = True
+) -> pd.DataFrame:
+    has_temp = use_temp and 'temp' in train_df.columns
+    has_rain = use_rain and 'rain' in train_df.columns
+
+    model = _fit_model(train_df, time_unit, use_temp=has_temp, use_rain=has_rain)
     future = model.make_future_dataframe(periods=periods, freq=_freq_for_time_unit(time_unit))
     
     # 추가 설명 변수 매핑 처리
-    if 'temp' in train_df.columns and 'rain' in train_df.columns:
-        if weather_df is not None:
-            future = pd.merge(future, weather_df[['ds', 'temp', 'rain']], on='ds', how='left')
-        else:
-            future = pd.merge(future, train_df[['ds', 'temp', 'rain']], on='ds', how='left')
+    if has_temp or has_rain:
+        cols_to_merge = ['ds']
+        if has_temp:
+            cols_to_merge.append('temp')
+        if has_rain:
+            cols_to_merge.append('rain')
+
+        source_df = weather_df if weather_df is not None else train_df
+        future = pd.merge(future, source_df[cols_to_merge], on='ds', how='left')
             
         # 미래 NaN 날씨 채우기 (작년 동기간 365일 전의 데이터를 복사)
-        for idx, row in future[future['temp'].isna() | future['rain'].isna()].iterrows():
+        nan_rows = future[(has_temp and future['temp'].isna()) | (has_rain and future['rain'].isna())]
+        for idx, row in nan_rows.iterrows():
             target_date = row['ds']
             last_year_date = target_date - timedelta(days=365)
             
             prev_temp = 15.0
             prev_rain = 0.0
             
-            source_df = weather_df if weather_df is not None else train_df
             match = source_df[source_df['ds'] == last_year_date]
             if not match.empty:
-                prev_temp = match.iloc[0]['temp']
-                prev_rain = match.iloc[0]['rain']
+                prev_temp = match.iloc[0]['temp'] if 'temp' in match.columns else 15.0
+                prev_rain = match.iloc[0]['rain'] if 'rain' in match.columns else 0.0
             else:
                 closest = source_df.iloc[(source_df['ds'] - last_year_date).abs().argsort()[:1]]
                 if not closest.empty:
                     prev_temp = closest.iloc[0]['temp'] if 'temp' in closest.columns else 15.0
                     prev_rain = closest.iloc[0]['rain'] if 'rain' in closest.columns else 0.0
-                    
-            future.loc[idx, 'temp'] = prev_temp
-            future.loc[idx, 'rain'] = prev_rain
             
-        future['temp'] = future['temp'].interpolate(method='linear').ffill().bfill().fillna(15.0)
-        future['rain'] = future['rain'].interpolate(method='linear').ffill().bfill().fillna(0.0)
+            if has_temp:
+                future.loc[idx, 'temp'] = prev_temp
+            if has_rain:
+                future.loc[idx, 'rain'] = prev_rain
+            
+        if has_temp:
+            future['temp'] = future['temp'].interpolate(method='linear').ffill().bfill().fillna(15.0)
+        if has_rain:
+            future['rain'] = future['rain'].interpolate(method='linear').ffill().bfill().fillna(0.0)
         
     forecast = model.predict(future)
     return forecast[forecast['ds'] > train_df['ds'].max()].reset_index(drop=True)
 
-def _rolling_backtest(df: pd.DataFrame, test_days: int, folds: int = 3, weather_df: pd.DataFrame = None) -> Dict[str, Any]:
+def _rolling_backtest(
+    df: pd.DataFrame, 
+    test_days: int, 
+    folds: int = 3, 
+    weather_df: pd.DataFrame = None,
+    use_temp: bool = True,
+    use_rain: bool = True
+) -> Dict[str, Any]:
     max_folds = min(folds, max(0, (len(df) - MIN_TRAIN_POINTS) // test_days))
     fold_results = []
 
@@ -175,7 +203,7 @@ def _rolling_backtest(df: pd.DataFrame, test_days: int, folds: int = 3, weather_
 
         train_df = df.iloc[:test_start].copy()
         test_df = df.iloc[test_start:test_end].copy()
-        test_forecast = _predict_periods(train_df, len(test_df), 'date', weather_df)
+        test_forecast = _predict_periods(train_df, len(test_df), 'date', weather_df, use_temp=use_temp, use_rain=use_rain)
 
         y_true = test_df['y'].tolist()
         y_pred = [_inverse_forecast_value(row['yhat']) for _, row in test_forecast.iterrows()]
@@ -200,7 +228,9 @@ def forecast_trend(
     historical_data: List[Dict[str, Any]],
     time_unit: str,
     forecast_steps: int = 30,
-    weather_data: List[Dict[str, Any]] = None
+    weather_data: List[Dict[str, Any]] = None,
+    use_temp: bool = True,
+    use_rain: bool = True
 ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     """
     과거 트렌드 데이터를 입력받아 Facebook Prophet 모델로 미래 트렌드를 예측합니다.
@@ -219,18 +249,29 @@ def forecast_trend(
             weather_df['rain'] = weather_df['rain'].astype(float)
 
     df = _prepare_dataframe(historical_data, weather_data)
-    model = _fit_model(df, time_unit)
+    
+    has_temp = use_temp and 'temp' in df.columns
+    has_rain = use_rain and 'rain' in df.columns
+
+    model = _fit_model(df, time_unit, use_temp=has_temp, use_rain=has_rain)
     future = model.make_future_dataframe(periods=forecast_steps, freq=_freq_for_time_unit(time_unit))
     
     # 추가 설명 변수 매핑 처리
-    if 'temp' in df.columns and 'rain' in df.columns:
+    if has_temp or has_rain:
+        cols_to_merge = ['ds']
+        if has_temp:
+            cols_to_merge.append('temp')
+        if has_rain:
+            cols_to_merge.append('rain')
+
         if weather_df is not None:
-            future = pd.merge(future, weather_df[['ds', 'temp', 'rain']], on='ds', how='left')
+            future = pd.merge(future, weather_df[cols_to_merge], on='ds', how='left')
         else:
-            future = pd.merge(future, df[['ds', 'temp', 'rain']], on='ds', how='left')
+            future = pd.merge(future, df[cols_to_merge], on='ds', how='left')
             
         # 미래 NaN 날씨 채우기 (작년 동기간 365일 전의 데이터를 복사)
-        for idx, row in future[future['temp'].isna() | future['rain'].isna()].iterrows():
+        nan_rows = future[(has_temp and future['temp'].isna()) | (has_rain and future['rain'].isna())]
+        for idx, row in nan_rows.iterrows():
             target_date = row['ds']
             last_year_date = target_date - timedelta(days=365)
             
@@ -240,19 +281,23 @@ def forecast_trend(
             source_df = weather_df if weather_df is not None else df
             match = source_df[source_df['ds'] == last_year_date]
             if not match.empty:
-                prev_temp = match.iloc[0]['temp']
-                prev_rain = match.iloc[0]['rain']
+                prev_temp = match.iloc[0]['temp'] if 'temp' in match.columns else 15.0
+                prev_rain = match.iloc[0]['rain'] if 'rain' in match.columns else 0.0
             else:
                 closest = source_df.iloc[(source_df['ds'] - last_year_date).abs().argsort()[:1]]
                 if not closest.empty:
                     prev_temp = closest.iloc[0]['temp'] if 'temp' in closest.columns else 15.0
                     prev_rain = closest.iloc[0]['rain'] if 'rain' in closest.columns else 0.0
                     
-            future.loc[idx, 'temp'] = prev_temp
-            future.loc[idx, 'rain'] = prev_rain
+            if has_temp:
+                future.loc[idx, 'temp'] = prev_temp
+            if has_rain:
+                future.loc[idx, 'rain'] = prev_rain
             
-        future['temp'] = future['temp'].interpolate(method='linear').ffill().bfill().fillna(15.0)
-        future['rain'] = future['rain'].interpolate(method='linear').ffill().bfill().fillna(0.0)
+        if has_temp:
+            future['temp'] = future['temp'].interpolate(method='linear').ffill().bfill().fillna(15.0)
+        if has_rain:
+            future['rain'] = future['rain'].interpolate(method='linear').ffill().bfill().fillna(0.0)
         
     forecast = model.predict(future)
 
@@ -267,8 +312,12 @@ def forecast_trend(
 
     # 6. 예측 분석 리포트 요약 정보
     model_used = "Facebook Prophet + IQR Smoothing"
-    if 'temp' in df.columns and 'rain' in df.columns:
-        model_used = "Facebook Prophet (날씨 기상 변수 결합 모델)"
+    if has_temp and has_rain:
+        model_used = "Facebook Prophet (기온 & 강수량 변수 결합 모델)"
+    elif has_temp:
+        model_used = "Facebook Prophet (기온 변수 결합 모델)"
+    elif has_rain:
+        model_used = "Facebook Prophet (강수량 변수 결합 모델)"
     
     all_y = list(df['y']) + [f['ratio'] for f in forecast_list]
     all_ds = list(df['ds']) + [pd.to_datetime(f['period']) for f in forecast_list]
@@ -310,7 +359,9 @@ def forecast_trend(
 def evaluate_trend_accuracy(
     historical_data: List[Dict[str, Any]],
     test_days: int = 15,
-    weather_data: List[Dict[str, Any]] = None
+    weather_data: List[Dict[str, Any]] = None,
+    use_temp: bool = True,
+    use_rain: bool = True
 ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     """
     과거 트렌드 데이터를 바탕으로 모델 정확도를 백테스트합니다.
@@ -331,12 +382,15 @@ def evaluate_trend_accuracy(
             weather_df['rain'] = weather_df['rain'].astype(float)
 
     df = _prepare_dataframe(historical_data, weather_data)
+    
+    has_temp = use_temp and 'temp' in df.columns
+    has_rain = use_rain and 'rain' in df.columns
 
     # 2. Train / Test 분리
     train_df = df.iloc[:-test_days]
     test_df = df.iloc[-test_days:]
 
-    forecast = _predict_periods(train_df, test_days, 'date', weather_df)
+    forecast = _predict_periods(train_df, test_days, 'date', weather_df, use_temp=has_temp, use_rain=has_rain)
 
     # 5. 결과 매핑
     result_list = []
@@ -382,13 +436,17 @@ def evaluate_trend_accuracy(
         })
 
     metrics = _calculate_metrics(y_true, y_pred)
-    rolling = _rolling_backtest(df, test_days=test_days, weather_df=weather_df)
+    rolling = _rolling_backtest(df, test_days=test_days, weather_df=weather_df, use_temp=has_temp, use_rain=has_rain)
     mape = metrics["mape"]
     accuracy = max(0, 100 - mape)
 
     model_used = "Facebook Prophet + IQR Smoothing (백테스트 모드)"
-    if 'temp' in df.columns and 'rain' in df.columns:
-        model_used = "Facebook Prophet (날씨 기상 변수 결합 백테스트 모델)"
+    if has_temp and has_rain:
+        model_used = "Facebook Prophet (기온 & 강수량 변수 결합 백테스트 모델)"
+    elif has_temp:
+        model_used = "Facebook Prophet (기온 변수 결합 백테스트 모델)"
+    elif has_rain:
+        model_used = "Facebook Prophet (강수량 변수 결합 백테스트 모델)"
 
     summary = {
         "modelUsed": model_used,
