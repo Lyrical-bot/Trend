@@ -857,23 +857,31 @@ window.fetchSnsTrend = async function() {
                     if (phase === 'GOLDEN_TIME') {
                         phaseEl.textContent = '🚀 MD 골든타임 (블루오션)';
                         phaseEl.style.color = '#10b981'; // Green
-                        badgeEl.textContent = '추천';
+                        badgeEl.textContent = '적기';
                         badgeEl.style.background = '#10b981';
                         badgeEl.style.color = 'white';
                         trendSynContainer.style.borderLeftColor = '#10b981';
                         trendSynContainer.style.background = 'rgba(16, 185, 129, 0.05)';
                     } else if (phase === 'RED_OCEAN') {
                         phaseEl.textContent = '🔥 대중 확산기 (레드오션 진입)';
-                        phaseEl.style.color = '#ef4444'; // Red
-                        badgeEl.textContent = '주의';
+                        phaseEl.style.color = '#f97316'; // Orange (조심)
+                        badgeEl.textContent = '조심';
+                        badgeEl.style.background = '#f97316';
+                        badgeEl.style.color = 'white';
+                        trendSynContainer.style.borderLeftColor = '#f97316';
+                        trendSynContainer.style.background = 'rgba(249, 115, 22, 0.05)';
+                    } else if (phase === 'LATE_STAGE') {
+                        phaseEl.textContent = '🥀 유행 끝물 (위험)';
+                        phaseEl.style.color = '#ef4444'; // Red (위험)
+                        badgeEl.textContent = '위험';
                         badgeEl.style.background = '#ef4444';
                         badgeEl.style.color = 'white';
                         trendSynContainer.style.borderLeftColor = '#ef4444';
                         trendSynContainer.style.background = 'rgba(239, 68, 68, 0.05)';
-                    } else if (phase === 'LATE_STAGE') {
-                        phaseEl.textContent = '🥀 유행 끝물 (위험)';
+                    } else if (phase === 'NO_DATA') {
+                        phaseEl.textContent = '⚠️ 유튜브 데이터 수집 대기';
                         phaseEl.style.color = '#6b7280'; // Gray
-                        badgeEl.textContent = '위험';
+                        badgeEl.textContent = '대기';
                         badgeEl.style.background = '#6b7280';
                         badgeEl.style.color = 'white';
                         trendSynContainer.style.borderLeftColor = '#6b7280';

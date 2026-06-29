@@ -8,6 +8,7 @@
 ## 🏷️ v3.2 — 트렌드 노이즈 필터링 고도화 (TF-IDF 및 Stopwords) (2026-06-29)
 
 ### 주요 개선 사항
+
 1. **TF-IDF 알고리즘 도입 (수학적 통계 필터링)**
    - `/api/sns/discovered-keywords` 엔드포인트에 TF-IDF 가중치 로직 적용
    - 전체 수집 비디오 수 대비 등장 빈도(IDF)를 계산하여, "편의점", "리뷰" 등 흔한 단어에 페널티를 주고 "두바이초콜릿" 등 유니크한 단어의 랭킹을 상승시킴
@@ -20,6 +21,7 @@
 ## 🏷️ v3.1 — 백엔드 파이프라인 안정화 및 지표 왜곡 버그 수정 (2026-06-29)
 
 ### 주요 개선 사항
+
 1. **패키지 인프라 오류 복구 (심각 해결)**
    - `sns_sensing` 및 `pipeline` 하위의 모든 디렉터리에 `__init__.py` 누락 복구
    - `keyword_detector.py` 및 `test_signals.py` 내부의 깨진 패키지 임포트 경로 복구
@@ -39,6 +41,7 @@
 ## 🏷️ v3.0 — Trend Bot MVP 아키텍처 개편 및 핵심 지표 도입 (2026-06-28)
 
 ### 주요 개선 사항
+
 1. **신규 기능 격리 및 플랫폼별 모듈 구조 도입 (`sns_sensing` 폴더 격리)**
    - 기존 레거시(네이버 검색어 봇) 코드와의 충돌 방지 및 유지보수성 향상을 위해 신규 MVP 관련 모든 기능(`api`, `database`, `models`, `pipeline`, `tests` 등)을 **`sns_sensing/`** 폴더 하위로 완전히 격리했습니다.
    - 또한, 향후 TikTok, Reddit 확장을 대비하여 `sns_sensing/platforms/` 디렉터리를 생성하고, `youtube/` 모듈 아래에 `collector`, `processor`, `analyzer`를 독립시켰습니다.
@@ -52,7 +55,6 @@
    - 프론트엔드에서 즉시 사용할 수 있는 타임라인 데이터 반환용 `GET /keyword/{keyword}` 엔드포인트를 추가했습니다.
 6. **파이프라인 로깅 강화 및 회귀 테스트 추가**
    - 디버깅을 위해 영상 수집 -> 키워드 추출 -> 신규 키워드 -> Burst 후보 흐름을 터미널에 명시적으로 출력하도록 하고, 핵심 지표 로직 보호를 위한 회귀 테스트(Regression Test) 항목을 신설했습니다.
-
 
 ## 🏷️ v2.5 — 장기 계절성 예측 오류 해결 및 차트 UI 개편 (2026-06-26)
 
@@ -566,6 +568,53 @@ main.py
 walkthrough.md
 파일에 자세히 정리해 두었습니다.
 
+## 2026-06-29
+
+Azure Database for PostgreSQL 연동 및 GitHub Actions CI/CD 구축
+이 계획은 로컬 SQLite 데이터베이스를 클라우드 데이터베이스인 Azure Database for PostgreSQL로 고도화하고, 깃허브 저장소(GitHub Repository)에 코드가 푸시될 때 자동으로 검증 및 배포가 수행되도록 GitHub Actions CI/CD 파이프라인을 연동하기 위한 설계입니다.
+
+User Review Required
+IMPORTANT
+
+PostgreSQL 드라이버 설치 필요 백엔드 파이썬 환경에서 PostgreSQL과 통신하기 위해 psycopg2-binary 패키지를 추가로 설치해야 합니다. 승인 시 Backend/requirements.txt에 해당 의존성을 추가하고 가상환경에 설치합니다.
+
+WARNING
+
+GitHub Actions 배포 대상(Target) 확정 필요 CI/CD 파이프라인 구축 시 코드를 어디에 배포(CD)할지 타겟을 결정해야 합니다. 아래 옵션 중 권장하는 **Option A(Azure Web App)**를 기본으로 계획하되, 다른 환경을 원하시면 알려주세요.
+
+Option A (권장): Azure Web App (FastAPI 백엔드) + Azure Static Web Apps (프론트엔드)
+Option B: 가상 머신(Azure VM 또는 Ubuntu Server)에 SSH 연결 및 git pull 후 재시작 배포
+Proposed Changes
+
+1. Azure PostgreSQL 데이터베이스 연동
+   [MODIFY]
+   db.py
+   연결 구조 최적화: .env에 정의된 DATABASE_URL을 동적으로 읽어오도록 수정합니다.
+   하이브리드 지원: DATABASE_URL이 PostgreSQL 주소이면 PostgreSQL용 커넥션을 생성하고, 설정이 없으면 기존 로컬 SQLite 파일 폴더를 폴백(Fallback)으로 자동 구성합니다.
+   python
+
+is_sqlite = DATABASE_URL.startswith("sqlite")
+connect_args = {"check_same_thread": False} if is_sqlite else {}
+engine = create_engine(DATABASE_URL, connect_args=connect_args)
+[MODIFY]
+requirements.txt
+PostgreSQL 연결 드라이버인 psycopg2-binary>=2.9.0 의존성을 추가합니다.
+[MODIFY]
+.env
+Azure PostgreSQL 연결 연결 주소 템플릿을 환경변수 파일에 삽입합니다:
+env
+
+DATABASE_URL=postgresql://[username]:[password]@[host]:5432/[dbname]?sslmode=require 2. GitHub Actions CI/CD 구축
+[NEW]
+ci-cd.yml
+CI (지속적 통합): main 브랜치에 푸시 또는 Pull Request가 올 때마다 자동으로 파이썬 의존성 패키지를 설치하고 Linter 및 검증 스크립트(test_api.py)를 기동하여 코드 적합성을 검증합니다.
+CD (지속적 배포): 코드 검증이 완료되면 Azure Web App 서비스(인증 자격 증명은 GitHub Secrets에 등록)로 빌드된 코드 패키지를 자동으로 압축 업로드하여 배포를 완료합니다.
+Verification Plan
+Automated Tests
+환경 변수에 로컬 PostgreSQL 혹은 SQLite를 연결한 상태에서 python Backend/test_api.py를 호출해 데이터 수집 및 연산 처리가 예외 없이 완수되는지 확인합니다.
+Manual Verification
+Azure PostgreSQL 커넥션을 연결하고 서버를 재구동한 뒤 테이블들이 자동으로 매핑 생성(DB 마이그레이션)되는지 검사하고, 대시보드에서 분석 결과가 DB에 정상 적재/조회되는지 테스트합니다.
+
 실행 방법
 🚀 실행 방법 (상세 가이드)
 (PowerShell 사용 시 필수) 스크립트 실행 권한 허용
@@ -626,3 +675,7 @@ cd Frontend
 powershell
 python -m http.server 5500
 크롬 등 인터넷 브라우저 주소창에 http://127.0.0.1:5500 을 입력하여 접속합니다.
+
+## **\*\*** 간단 시작 방법 **\*\*\***
+
+🚀 백엔드 서버 즉시 기동 (FastAPI)

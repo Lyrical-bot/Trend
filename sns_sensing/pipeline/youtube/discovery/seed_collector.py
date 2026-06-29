@@ -9,8 +9,12 @@ from dotenv import load_dotenv
 from datetime import datetime, timezone
 import random
 
-# .env 로드
-load_dotenv()
+# .env 로드 (실행 경로와 관계없이 Backend/key/.env 파일로 절대 경로 해석)
+current_dir = os.path.dirname(os.path.abspath(__file__))
+root_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(current_dir)))))
+dotenv_path = os.path.join(root_dir, "Backend", "key", ".env")
+load_dotenv(dotenv_path=dotenv_path)
+
 API_KEY = os.getenv("YOUTUBE_API_KEY")
 
 # 유튜브 API 클라이언트 초기화 (키가 없으면 에러를 뿜지 않고 수집 기능만 스킵)

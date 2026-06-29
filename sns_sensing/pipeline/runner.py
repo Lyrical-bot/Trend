@@ -5,7 +5,14 @@
 
 import logging
 import sys
+import os
 from datetime import datetime, timedelta
+
+# 최상위 루트 디렉토리(Trend)를 파이썬 모듈 탐색 경로에 추가하여 ModuleNotFoundError 방지
+parent_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if parent_dir not in sys.path:
+    sys.path.append(parent_dir)
+
 from sqlalchemy.orm import Session
 from sns_sensing.database.db import SessionLocal, engine, Base
 from sns_sensing.models.models import Video, Keyword, KeywordStat

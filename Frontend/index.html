@@ -152,7 +152,7 @@
                     <div class="chart-header-row" style="margin-bottom: 16px;">
                         <h2 class="section-title"><i class="fa-solid fa-satellite-dish text-purple"></i> 넥스트 히트 상품: Weak Signal 예측 (AI Feature Engine)</h2>
                         <div style="display: flex; gap: 10px; align-items: center; font-size: 0.9rem;">
-                            <span>조회 기간: </span>
+                            <span style="white-space: nowrap;">조회 기간: </span>
                             <input type="date" id="weak-start-date" class="clean-select btn-sm" style="padding: 4px 8px; height: auto;" title="단순 시각적 통일용이며 실제 엔진은 종료일을 기준으로 데이터를 역산합니다.">
                             <span>~</span>
                             <input type="date" id="weak-end-date" class="clean-select btn-sm" style="padding: 4px 8px; height: auto;" title="이 날짜를 기준으로 과거 데이터를 역산하여 시그널을 계산합니다.">
@@ -193,7 +193,7 @@
                     <div class="chart-header-row" style="margin-bottom: 16px;">
                         <h2 class="section-title"><i class="fa-solid fa-rocket text-purple"></i> 선행 지표 감지기: 가속도 폭발 Top 10</h2>
                         <div style="display: flex; gap: 10px; align-items: center; font-size: 0.9rem;">
-                            <span>조회 기간: </span>
+                            <span style="white-space: nowrap;">조회 기간: </span>
                             <input type="date" id="vel-start-date" class="clean-select btn-sm" style="padding: 4px 8px; height: auto;">
                             <span>~</span>
                             <input type="date" id="vel-end-date" class="clean-select btn-sm" style="padding: 4px 8px; height: auto;">
@@ -269,7 +269,7 @@
                     </div>
 
                     <!-- 4대 지표 요약 카드 -->
-                    <div id="sns-metrics-container" style="display: none; grid-template-columns: repeat(4, 1fr); gap: 15px; margin-bottom: 20px;">
+                    <div id="sns-metrics-container" class="sns-metrics-grid" style="display: none; gap: 15px; margin-bottom: 20px;">
                         <div class="glass-card" style="padding: 15px; text-align: center;">
                             <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 5px;">신규 진입 여부</div>
                             <div id="sns-metric-new" style="font-size: 1.5rem; font-weight: bold; color: #10b981;">-</div>

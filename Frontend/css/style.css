@@ -82,18 +82,29 @@ body {
     padding-left: 1.5rem;
 }
 
-/* Main Grid Layout (가로폭 한계를 늘려 반응형 리사이징 보강) */
+/* Main Grid Layout - 가로폭 리사이징 유연화 */
 .main-grid {
     display: grid;
-    grid-template-columns: 350px 1fr;
+    grid-template-columns: 320px 1fr;
     gap: 1.5rem;
     max-width: 98%;
     margin: 1.5rem auto;
     width: 100%;
     padding: 0 1.5rem;
+    transition: grid-template-columns 0.3s ease;
 }
 
-@media (max-width: 1024px) {
+/* 1100px 이하에서도 세로로 쌓이지 않고 사이드바를 압축하여 가로 유지 */
+@media (max-width: 1100px) {
+    .main-grid {
+        grid-template-columns: 280px 1fr;
+        gap: 1rem;
+        padding: 0 0.8rem;
+    }
+}
+
+/* 화면 너비가 820px 이하가 될 때 비로소 수직(세로) 배치로 스택 쌓기 */
+@media (max-width: 820px) {
     .main-grid {
         grid-template-columns: 1fr;
     }
@@ -679,3 +690,59 @@ body {
 
 .text-purple { color: var(--primary); }
 .text-yellow { color: var(--brand-yellow); }
+
+/* SNS 4대 지표 반응형 그리드 - auto-fit 도입으로 가로 배치 극대화 */
+.sns-metrics-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 15px;
+}
+
+/* 극단적으로 좁은 모바일 화면(620px 이하)에서만 2열 또는 1열로 떨어지게 유연 조정 */
+@media (max-width: 620px) {
+    .sns-metrics-grid {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 10px !important;
+    }
+}
+
+@media (max-width: 360px) {
+    .sns-metrics-grid {
+        grid-template-columns: 1fr;
+        gap: 10px !important;
+    }
+}
+
+/* 추가 모바일 뷰 최적화: 화면 축소 및 모바일 터치 환경 시 컴포넌트 압축/정렬 */
+@media (max-width: 768px) {
+    .header-area {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.5rem;
+        padding: 1rem;
+    }
+    
+    .subtitle {
+        border-left: none;
+        padding-left: 0;
+        margin-top: 0.2rem;
+    }
+    
+    .chart-header-row {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 10px;
+    }
+    
+    /* 테이블 가로 스크롤 가능 및 폰트 압축 */
+    .table-container {
+        width: 100%;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+    
+    .clean-table th, .clean-table td {
+        padding: 8px 4px !important;
+        font-size: 0.8rem;
+    }
+}

@@ -440,6 +440,11 @@ async def get_trend_synthesis(keyword: str):
     db = SessionLocal()
     current_time = datetime.now()
     sns_signals = calculate_all_signals(db, keyword, current_time)
+    
+    # [추가] DB 내 수집된 유튜브 총 영상 개수 및 이 키워드로 수집된 영상 개수 파악
+    from sns_sensing.models.models import Video, Keyword
+    total_videos_in_db = db.query(Video).count()
+    keyword_videos_in_db = db.query(Keyword).filter(Keyword.keyword == keyword).count()
     db.close()
     
     # 2. Fetch Naver Absolute Search Volume (월간 검색 건수)
@@ -459,7 +464,11 @@ async def get_trend_synthesis(keyword: str):
     is_naver_low = monthly_volume < LOW_VOLUME_THRESHOLD
     is_naver_high = monthly_volume >= LOW_VOLUME_THRESHOLD
     
-    if is_youtube_hot and is_naver_low:
+    # [분기 보완] 수집 데이터가 전혀 적재되지 않은 초기 상태는 위험/끝물로 오판하지 않고 NO_DATA(수집 대기) 처리
+    if total_videos_in_db == 0 or keyword_videos_in_db == 0:
+        phase = "NO_DATA"
+        message = "현재 데이터베이스에 수집된 유튜브 트렌드 데이터가 없습니다. 안내해 드린 PowerShell 명령어로 유튜브 수집기(runner.py)를 가동하여 데이터를 수집해 주세요."
+    elif is_youtube_hot and is_naver_low:
         phase = "GOLDEN_TIME"
         message = f"유튜브 확산 지표가 높지만, 네이버 월간 검색량은 {monthly_volume:,.0f}건으로 아직 대중화되지 않았습니다. 지금이 상품 기획의 골든타임(블루오션)입니다!"
     elif is_youtube_hot and is_naver_high:
