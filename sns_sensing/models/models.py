@@ -35,7 +35,29 @@ class Video(Base):
     published_at = Column(DateTime, nullable=False)
     channel_id = Column(String, nullable=False)
     channel_title = Column(String, nullable=False)
+    subscriber_count = Column(Integer, nullable=True, default=0)
     collected_at = Column(DateTime, default=func.now())
+
+
+class VideoStat(Base):
+    """
+    # video_stats 테이블
+    #
+    # 1. 목적 (왜 필요한 테이블인지):
+    # 개별 영상의 시간대별 조회수, 좋아요, 댓글수 성장세(Velocity)를 추적하기 위한 시계열 테이블입니다.
+    # 단순 스냅샷이 아닌, '시간 흐름에 따른 증가폭'과 '참여도(Engagement)'를 계산하는 기반이 됩니다.
+    """
+    __tablename__ = "video_stats"
+    __table_args__ = (
+        Index('idx_video_hour', 'video_id', 'hour'),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    video_id = Column(String, ForeignKey("videos.video_id"), nullable=False)
+    hour = Column(DateTime, nullable=False)
+    view_count = Column(Integer, default=0)
+    like_count = Column(Integer, default=0)
+    comment_count = Column(Integer, default=0)
 
 
 class Keyword(Base):
@@ -93,3 +115,30 @@ class KeywordStat(Base):
     keyword = Column(String, nullable=False)
     mention_count = Column(Integer, default=0)
     channel_count = Column(Integer, default=0)
+
+class ApiCache(Base):
+    """
+    # api_cache 테이블
+    #
+    # 1. 목적:
+    # 네이버 API(트렌드 검색어, 쇼핑 인기검색어) 등 외부 API의 호출 결과를 캐싱합니다.
+    # API 일일 호출 한도(Rate Limit)를 방어하고 개발 시 빠른 응답 속도를 확보합니다.
+    #
+    # 2. 이유:
+    # - id (PK): 고유 식별자
+    # - api_name: 호출한 API의 종류 (예: 'naver_trend', 'naver_datalab_top')
+    # - request_hash: 파라미터를 해싱한 문자열. 동일한 요청인지 구분하는 고유 키.
+    # - date_key: 'YYYY-MM-DD' 형식. 하루에 한 번만 갱신하기 위한 기준.
+    # - response_data: API 응답 원본 JSON 문자열.
+    """
+    __tablename__ = "api_cache"
+    __table_args__ = (
+        Index('idx_api_cache_lookup', 'api_name', 'request_hash', 'date_key'),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    api_name = Column(String, nullable=False)
+    request_hash = Column(String, nullable=False)
+    date_key = Column(String, nullable=False)
+    response_data = Column(String, nullable=False)
+    created_at = Column(DateTime, default=func.now())

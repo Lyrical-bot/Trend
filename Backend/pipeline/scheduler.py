@@ -80,11 +80,18 @@ def init_scheduler():
     scheduler.start()
     print("백그라운드 스케줄러가 시작되었습니다. (주기: 식품 6시간, 유튜브 3시간)")
     
-    # 만약 캐시 파일이 없다면 서버 시작 시 즉시 백그라운드로 1회 실행 트리거
     import threading
+    import time
     
-    if not os.path.exists(WEAK_SIGNALS_CACHE) or not os.path.exists(VELOCITY_CACHE):
-        print("초기 캐시 데이터가 없습니다. 식품 데이터 수집을 즉시 시작합니다...")
+    cache_needs_update = True
+    if os.path.exists(WEAK_SIGNALS_CACHE) and os.path.exists(VELOCITY_CACHE):
+        file_mod_time = os.path.getmtime(WEAK_SIGNALS_CACHE)
+        # 파일이 생성된지 6시간(21600초)이 지나지 않았다면 업데이트 생략
+        if time.time() - file_mod_time < 6 * 3600:
+            cache_needs_update = False
+            
+    if cache_needs_update:
+        print("초기 캐시 데이터가 없거나 6시간 이상 경과했습니다. 식품 데이터 수집을 즉시 시작합니다...")
         t1 = threading.Thread(target=sync_run_food_collection_job)
         t1.start()
         

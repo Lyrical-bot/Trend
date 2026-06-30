@@ -142,7 +142,7 @@ async def get_velocity_ranking_live(keywords: list[str], start_date_str=None, en
     
     # 1. Determine dates
     if not start_date_str or not end_date_str:
-        end_dt = pd.to_datetime(datetime.now().strftime("%Y-%m-%d"))
+        end_dt = pd.to_datetime((datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d"))
         start_dt = end_dt - pd.Timedelta(days=2) # Recent 3 days
     else:
         start_dt = pd.to_datetime(start_date_str)

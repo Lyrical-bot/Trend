@@ -80,8 +80,8 @@ async def detect_weak_signals_live(keywords: list[str], days_ago: int = 60) -> l
     from naver_api import fetch_naver_trend
     from naver_ad_api import fetch_search_ad_volume
     
-    end_date = datetime.now().strftime("%Y-%m-%d")
-    start_date = (datetime.now() - timedelta(days=days_ago)).strftime("%Y-%m-%d")
+    end_date = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+    start_date = (datetime.now() - timedelta(days=days_ago + 1)).strftime("%Y-%m-%d")
     
     # 1. Fetch Search Ad Volume for all keywords
     ad_volumes = await fetch_search_ad_volume(keywords)
