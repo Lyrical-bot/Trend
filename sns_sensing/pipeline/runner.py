@@ -8,8 +8,8 @@ import sys
 from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 from sns_sensing.database.db import SessionLocal, engine, Base
-from sns_sensing.models.models import Video, Keyword, KeywordStat
-from sns_sensing.pipeline.youtube.discovery.seed_collector import fetch_youtube_videos
+from sns_sensing.models.models import Video, Keyword, KeywordStat, VideoStat
+from sns_sensing.pipeline.youtube.discovery.seed_collector import fetch_youtube_videos, fetch_video_stats_batch
 from sns_sensing.pipeline.youtube.discovery.keyword_discovery import extract_keywords
 
 logging.basicConfig(level=logging.INFO, format='%(message)s', handlers=[logging.StreamHandler(sys.stdout)])
@@ -33,7 +33,13 @@ def run_pipeline():
         keywords_extracted = 0
         new_keywords_count = 0
         
-        # [단계 2 & 3] DB 저장 및 키워드 추출
+        # [단계 2] 비디오 정보 수집 및 키워드 추출 (임시 저장)
+        video_to_keywords = {}
+        all_extracted_keywords = set()
+        
+        import asyncio
+        from sns_sensing.pipeline.openai_keyword_filter.keyword_filter import classify_keywords_batch
+        
         for v_data in raw_videos:
             # 중복 체크
             exists = db.query(Video).filter(Video.video_id == v_data['video_id']).first()
@@ -47,22 +53,55 @@ def run_pipeline():
                 description=v_data['description'],
                 published_at=v_data['published_at'],
                 channel_id=v_data['channel_id'],
-                channel_title=v_data['channel_title']
+                channel_title=v_data['channel_title'],
+                subscriber_count=v_data.get('subscriber_count', 0)
             )
             db.add(video_obj)
             videos_collected += 1
             
-            # Kiwi 키워드 추출 (제목 + 설명)
+            stat_hour = v_data['collected_at'].replace(minute=0, second=0, microsecond=0)
+            vstat_obj = VideoStat(
+                video_id=v_data['video_id'],
+                hour=stat_hour,
+                view_count=v_data.get('view_count', 0),
+                like_count=v_data.get('like_count', 0),
+                comment_count=v_data.get('comment_count', 0)
+            )
+            db.add(vstat_obj)
+            
+            # Kiwi 키워드 1차 추출 (단일명사 + 복합명사 + 룰베이스 필터)
             combined_text = f"{v_data['title']} {v_data['description']}"
             extracted_words = extract_keywords(combined_text)
             
-            for word in extracted_words:
-                kw_obj = Keyword(video_id=v_data['video_id'], keyword=word)
+            video_to_keywords[v_data['video_id']] = {
+                'v_data': v_data,
+                'words': extracted_words
+            }
+            all_extracted_keywords.update(extracted_words)
+            
+        # [단계 3] LLM 2차 배치 필터링 (비용 절감을 위해 한 번에 전송)
+        valid_food_keywords = set()
+        if all_extracted_keywords:
+            logger.info(f"LLM 2차 필터링을 위해 {len(all_extracted_keywords)}개의 키워드를 전송합니다...")
+            # 비동기 함수 동기적으로 실행
+            filtered_list = asyncio.run(classify_keywords_batch(list(all_extracted_keywords)))
+            valid_food_keywords = set(filtered_list)
+            logger.info(f"LLM 필터링 완료: {len(all_extracted_keywords)}개 중 {len(valid_food_keywords)}개 생존")
+            
+        # [단계 4] 최종 생존 키워드 DB 저장 및 통계 업데이트
+        for video_id, data in video_to_keywords.items():
+            v_data = data['v_data']
+            words = data['words']
+            
+            # LLM 필터를 통과한 단어만 남김
+            final_words = [w for w in words if w in valid_food_keywords]
+            
+            for word in final_words:
+                kw_obj = Keyword(video_id=video_id, keyword=word)
                 db.add(kw_obj)
                 keywords_extracted += 1
                 
                 # 통계 (keyword_stats) 업데이트
-                # 대시보드 필터 기준을 영상 업로드 시간이 아닌 수집 시간(collected_at)으로 변경
                 stat_hour = v_data['collected_at'].replace(minute=0, second=0, microsecond=0)
                 
                 stat_obj = db.query(KeywordStat).filter(
@@ -89,6 +128,33 @@ def run_pipeline():
                     
                     if not existing_channel:
                         stat_obj.channel_count += 1
+                        
+        # [단계 4] 과거 7일 이내 수집된 영상들의 시계열 통계(VideoStat) 배치 업데이트
+        logger.info("과거 7일 내 수집된 영상의 통계를 배치로 갱신합니다...")
+        seven_days_ago = datetime.now() - timedelta(days=7)
+        recent_videos = db.query(Video.video_id).filter(Video.collected_at >= seven_days_ago).all()
+        recent_video_ids = [v[0] for v in recent_videos]
+        
+        batch_updated_count = 0
+        current_hour = datetime.now().replace(minute=0, second=0, microsecond=0)
+        
+        # 50개씩 묶어서 처리
+        for i in range(0, len(recent_video_ids), 50):
+            batch_ids = recent_video_ids[i:i+50]
+            stats_dict = fetch_video_stats_batch(batch_ids)
+            
+            for vid, stats in stats_dict.items():
+                exists = db.query(VideoStat).filter(VideoStat.video_id == vid, VideoStat.hour == current_hour).first()
+                if not exists:
+                    new_stat = VideoStat(
+                        video_id=vid,
+                        hour=current_hour,
+                        view_count=stats['view_count'],
+                        like_count=stats['like_count'],
+                        comment_count=stats['comment_count']
+                    )
+                    db.add(new_stat)
+                    batch_updated_count += 1
                     
         db.commit()
         

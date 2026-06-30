@@ -35,7 +35,29 @@ class Video(Base):
     published_at = Column(DateTime, nullable=False)
     channel_id = Column(String, nullable=False)
     channel_title = Column(String, nullable=False)
+    subscriber_count = Column(Integer, nullable=True, default=0)
     collected_at = Column(DateTime, default=func.now())
+
+
+class VideoStat(Base):
+    """
+    # video_stats 테이블
+    #
+    # 1. 목적 (왜 필요한 테이블인지):
+    # 개별 영상의 시간대별 조회수, 좋아요, 댓글수 성장세(Velocity)를 추적하기 위한 시계열 테이블입니다.
+    # 단순 스냅샷이 아닌, '시간 흐름에 따른 증가폭'과 '참여도(Engagement)'를 계산하는 기반이 됩니다.
+    """
+    __tablename__ = "video_stats"
+    __table_args__ = (
+        Index('idx_video_hour', 'video_id', 'hour'),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    video_id = Column(String, ForeignKey("videos.video_id"), nullable=False)
+    hour = Column(DateTime, nullable=False)
+    view_count = Column(Integer, default=0)
+    like_count = Column(Integer, default=0)
+    comment_count = Column(Integer, default=0)
 
 
 class Keyword(Base):

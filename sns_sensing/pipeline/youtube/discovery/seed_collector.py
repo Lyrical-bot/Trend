@@ -51,24 +51,83 @@ def fetch_youtube_videos(max_results: int = 20) -> list:
         return []
     
     videos = []
+    video_ids = [item['id']['videoId'] for item in search_response.get('items', [])]
+    channel_ids = list(set([item['snippet']['channelId'] for item in search_response.get('items', [])]))
+    
+    # 2. 비디오 통계 수집 (조회수, 좋아요, 댓글수)
+    video_stats_dict = {}
+    if video_ids:
+        try:
+            v_res = youtube.videos().list(part='statistics', id=','.join(video_ids)).execute()
+            for v_item in v_res.get('items', []):
+                stats = v_item.get('statistics', {})
+                video_stats_dict[v_item['id']] = {
+                    'view_count': int(stats.get('viewCount', 0)),
+                    'like_count': int(stats.get('likeCount', 0)),
+                    'comment_count': int(stats.get('commentCount', 0))
+                }
+        except Exception as e:
+            print(f"[Error] 비디오 통계 가져오기 실패: {e}")
+
+    # 3. 채널 통계 수집 (구독자 수)
+    channel_stats_dict = {}
+    if channel_ids:
+        try:
+            c_res = youtube.channels().list(part='statistics', id=','.join(channel_ids)).execute()
+            for c_item in c_res.get('items', []):
+                stats = c_item.get('statistics', {})
+                channel_stats_dict[c_item['id']] = int(stats.get('subscriberCount', 0))
+        except Exception as e:
+            print(f"[Error] 채널 통계 가져오기 실패: {e}")
+
     for item in search_response.get('items', []):
         video_id = item['id']['videoId']
         snippet = item['snippet']
+        channel_id = snippet['channelId']
         
         # 날짜 문자열 파싱
         published_at_str = snippet['publishedAt']
-        # 예: '2026-06-28T10:00:00Z'
         published_at = datetime.strptime(published_at_str, "%Y-%m-%dT%H:%M:%SZ")
+        
+        v_stat = video_stats_dict.get(video_id, {'view_count': 0, 'like_count': 0, 'comment_count': 0})
+        subscriber_count = channel_stats_dict.get(channel_id, 0)
         
         video_data = {
             "video_id": video_id,
             "title": snippet['title'],
             "description": snippet['description'],
             "published_at": published_at,
-            "channel_id": snippet['channelId'],
+            "channel_id": channel_id,
             "channel_title": snippet['channelTitle'],
+            "subscriber_count": subscriber_count,
+            "view_count": v_stat['view_count'],
+            "like_count": v_stat['like_count'],
+            "comment_count": v_stat['comment_count'],
             "collected_at": datetime.now()
         }
         videos.append(video_data)
         
     return videos
+
+def fetch_video_stats_batch(video_ids: list) -> dict:
+    """
+    비디오 ID 목록(최대 50개)을 받아 조회수, 좋아요, 댓글수 통계를 반환합니다.
+    (과거 7일치 데이터 배치 업데이트용)
+    """
+    if not video_ids:
+        return {}
+        
+    video_stats_dict = {}
+    try:
+        v_res = youtube.videos().list(part='statistics', id=','.join(video_ids)).execute()
+        for v_item in v_res.get('items', []):
+            stats = v_item.get('statistics', {})
+            video_stats_dict[v_item['id']] = {
+                'view_count': int(stats.get('viewCount', 0)),
+                'like_count': int(stats.get('likeCount', 0)),
+                'comment_count': int(stats.get('commentCount', 0))
+            }
+    except Exception as e:
+        print(f"[Error] 비디오 통계 배치 수집 실패: {e}")
+        
+    return video_stats_dict
