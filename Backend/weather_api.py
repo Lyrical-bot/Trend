@@ -1,4 +1,5 @@
 import os
+import csv
 import httpx
 import logging
 from dotenv import load_dotenv
@@ -99,21 +100,20 @@ async def fetch_weather_data(start_date: str, end_date: str, stn_id: str = "108"
     기존 기상청 Open API 외부 호출을 전면 비활성화(주석 처리)하고, 
     Backend/data 폴더 하위의 5개년 로컬 날씨 CSV 데이터셋 파일들을 직접 파싱·정제하여 반환합니다.
     """
-    import csv
+    # -------------------------------------------------------------
+    # [추가 및 수정일자: 2026-06-30]
+    # [수정내용: 기상 데이터 CSV 로드 시 매번 파일 I/O를 수행해
+    #            속도가 심각하게(30~40초) 지연되던 병목을 해결하기 위해,
+    #            서버 시작(모듈 로드) 시점에 5개년치 로컬 CSV 파일 전체를
+    #            메모리에 전역 캐싱(_WEATHER_CACHE)하는 기법 도입.]
+    # -------------------------------------------------------------
+    global _WEATHER_CACHE
     
-    # 1. 5개년 날씨 CSV 파일들이 저장된 디렉토리 경로 지정
-    #    os.path.dirname(os.path.abspath(__file__))를 사용하면 이 파일(weather_api.py)이 속한 Backend 폴더의 절대 경로를 얻습니다.
-    #    그 아래 'data' 폴더 내의 CSV 파일들을 찾기 위해 os.path.join으로 최종 경로(Backend/data)를 생성합니다.
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    data_dir = os.path.join(current_dir, "data")
-    
-    # data 폴더가 실제로 존재하지 않으면 로그를 찍고 빈 리스트를 반환하여 에러 발생을 방지합니다.
-    if not os.path.exists(data_dir):
-        logger.error(f"로컬 기상 데이터 디렉토리를 찾을 수 없습니다: {data_dir}")
-        return []
-        
-    # 2. API 호출 측에서 넘겨받은 날짜(start_date, end_date) 포맷이 'YYYY-MM-DD' 형식인지 문법 검증합니다.
-    #    포맷이 틀리면 datetime 변환 시 ValueError가 발생하며 에러를 반환합니다.
+    # 캐시가 비어있으면 단 1회 로드합니다.
+    if not _WEATHER_CACHE:
+        _load_all_weather_to_cache()
+
+    # 날짜 포맷 검증
     try:
         from datetime import datetime
         datetime.strptime(start_date, "%Y-%m-%d")
@@ -122,56 +122,65 @@ async def fetch_weather_data(start_date: str, end_date: str, stn_id: str = "108"
         logger.error(f"잘못된 날짜 포맷입니다. start_date: {start_date}, end_date: {end_date}")
         return []
         
-    # 파싱된 최종 날씨 객체들을 임시 저장할 리스트
-    combined = []
+    # 메모리에서 범위에 부합하는 날씨 데이터 슬라이싱 필터링 수행
+    filtered_list = [
+        w for w in _WEATHER_CACHE 
+        if start_date <= w["period"] <= end_date
+    ]
+    return filtered_list
+
+# 전역 기상 데이터 캐시 리스트
+_WEATHER_CACHE: List[Dict[str, Any]] = []
+
+def _load_all_weather_to_cache():
+    """
+    [추가 및 수정일자: 2026-06-30]
+    [수정내용: Backend/data 폴더 아래의 모든 5개년 날씨 CSV 파일을 읽어 전역 캐시에 적재합니다.]
+    """
+    global _WEATHER_CACHE
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    data_dir = os.path.join(current_dir, "data")
     
-    # 3. data_dir 폴더 내에 있는 파일들 중 확장자가 '.csv'로 끝나는 모든 날씨 CSV 파일명을 스캔합니다.
-    #    예: ['1.20250629~20260628정리.csv', '2.20240629~20250628정리.csv', ...]
+    if not os.path.exists(data_dir):
+        logger.error(f"로컬 기상 데이터 디렉토리를 찾을 수 없습니다: {data_dir}")
+        return
+        
+    combined = []
     csv_files = [f for f in os.listdir(data_dir) if f.endswith(".csv")]
     
-    # 4. 각 CSV 파일들을 하나씩 순회하며 열어서 파싱합니다.
     for csv_file in csv_files:
         file_path = os.path.join(data_dir, csv_file)
         try:
-            # utf-8-sig 인코딩은 한글 Excel 등에서 CSV 저장 시 붙는 3바이트 BOM(\ufeff)을 자동으로 제거해줍니다.
             with open(file_path, mode="r", encoding="utf-8-sig") as f:
-                # csv.DictReader는 CSV의 첫 행(헤더)을 Key로 사용하여 행 단위 데이터를 딕셔너리로 읽어줍니다.
                 reader = csv.DictReader(f)
                 for row in reader:
-                    # CSV 헤더 컬럼명 매핑: '날짜', '기온(°C)', '습도(%)', '강수량(mm)'
                     period = row.get("날짜")
                     if not period:
                         continue
-                        
                     period = period.strip()
-                    # 5. 사용자가 요청한 날짜 범위 [start_date, end_date] 사이에 속하는 행(Row)만 필터링합니다.
-                    #    문자열 형식의 날짜('YYYY-MM-DD')는 알파벳 순서대로 대소비교(<=, >=)가 완벽히 가능합니다.
-                    if start_date <= period <= end_date:
-                        avg_ta_str = row.get("기온(°C)", "0.0")
-                        sum_rn_str = row.get("강수량(mm)", "0.0")
+                    
+                    avg_ta_str = row.get("기온(°C)", "0.0")
+                    sum_rn_str = row.get("강수량(mm)", "0.0")
+                    
+                    try:
+                        avg_ta = float(avg_ta_str) if avg_ta_str else 0.0
+                    except ValueError:
+                        avg_ta = 0.0
                         
-                        # 6. 문자열 기온값을 실수(float) 형태로 파싱합니다. (결측이나 공백 시 0.0으로 폴백)
-                        try:
-                            avg_ta = float(avg_ta_str) if avg_ta_str else 0.0
-                        except ValueError:
-                            avg_ta = 0.0
-                            
-                        # 7. 문자열 강수량값을 실수(float) 형태로 파싱합니다. (결측이나 공백 시 0.0으로 폴백)
-                        try:
-                            sum_rn = float(sum_rn_str) if sum_rn_str else 0.0
-                        except ValueError:
-                            sum_rn = 0.0
-                            
-                        # 기존 백엔드 API 호환 규격에 맞춰 period(날짜), avgTa(기온), sumRn(강수량) 필드로 변환합니다.
-                        combined.append({
-                            "period": period,
-                            "avgTa": avg_ta,
-                            "sumRn": sum_rn
-                        })
+                    try:
+                        sum_rn = float(sum_rn_str) if sum_rn_str else 0.0
+                    except ValueError:
+                        sum_rn = 0.0
+                        
+                    combined.append({
+                        "period": period,
+                        "avgTa": avg_ta,
+                        "sumRn": sum_rn
+                    })
         except Exception as e:
             logger.error(f"기상 데이터 파일 {csv_file} 파싱 에러: {e}")
             
-    # 8. 서로 다른 csv 파일들 간에 날짜가 겹칠 수 있으므로 중복 날짜를 방지합니다.
+    # 중복 제거 및 날짜순 정렬
     seen = set()
     final_list = []
     for w in combined:
@@ -179,7 +188,11 @@ async def fetch_weather_data(start_date: str, end_date: str, stn_id: str = "108"
             seen.add(w["period"])
             final_list.append(w)
             
-    return sorted(final_list, key=lambda x: x["period"])
+    _WEATHER_CACHE = sorted(final_list, key=lambda x: x["period"])
+    logger.info(f"기상 데이터 메모리 전역 캐시 적재 완료 (총 {len(_WEATHER_CACHE)}건)")
+
+# 최초 기동 시 캐싱 미리 수행
+_load_all_weather_to_cache()
 
 
 if __name__ == "__main__":

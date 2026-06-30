@@ -87,18 +87,7 @@
                         </div>
                     </div>
 
-                    <!-- Weather Regressors Options -->
-                    <div class="form-section">
-                        <label class="form-label">기상 영향도 반영 (Prophet AI 학습)</label>
-                        <div style="display: flex; gap: 15px; margin-top: 5px;">
-                            <label class="check-label" style="font-size: 0.85rem; display: flex; align-items: center; gap: 6px; cursor: pointer;">
-                                <input type="checkbox" id="use-temp" checked> 평균 기온 반영
-                            </label>
-                            <label class="check-label" style="font-size: 0.85rem; display: flex; align-items: center; gap: 6px; cursor: pointer;">
-                                <input type="checkbox" id="use-rain" checked> 강수량 반영
-                            </label>
-                        </div>
-                    </div>
+
 
                     <!-- Filters -->
                     <div class="form-section accordion">
@@ -244,7 +233,7 @@
                 <!-- [모듈] 📱 유튜브 SNS 트렌드 4대 핵심 지표 분석 MVP -->
                 <section class="clean-card" id="sns-trend-module" style="margin-bottom: 24px; border: 2px solid rgba(239, 68, 68, 0.3);">
                     <div class="chart-header-row" style="margin-bottom: 16px;">
-                        <h2 class="section-title"><i class="fa-brands fa-youtube" style="color: #ef4444;"></i> 유튜브 SNS 트렌드 4대 지표 추적 (MVP)</h2>
+                        <h2 class="section-title"><i class="fa-brands fa-youtube" style="color: #ef4444;"></i> <span id="sns-chart-title">유튜브 SNS 트렌드 4대 지표 추적 (MVP)</span></h2>
                         <div style="display: flex; gap: 10px; align-items: center; font-size: 0.9rem;">
                             <input type="text" id="sns-keyword-input" class="clean-select" style="padding: 6px 12px; height: auto;" placeholder="키워드 입력 (예: 버터떡)">
                             <button type="button" class="btn-primary btn-sm" onclick="window.fetchSnsTrend()" style="background-color: #ef4444; border-color: #ef4444;">
@@ -303,6 +292,7 @@
 
                     <!-- 타임라인 그래프 영역 -->
                     <div id="sns-chart" style="min-height: 300px; display: none;"></div>
+                    <div id="sns-chart-caption" class="chart-caption" style="display: none; text-align: center; margin-top: 10px; font-weight: bold; color: #000000; font-size: 0.95rem;"></div>
                     <div id="sns-placeholder" style="text-align: center; padding: 40px; color: var(--text-muted);">
                         <i class="fa-brands fa-youtube" style="font-size: 3rem; opacity: 0.2; margin-bottom: 10px;"></i>
                         <p>키워드를 검색하여 타임라인 추이를 확인하세요.</p>
@@ -317,7 +307,7 @@
                 <!-- Chart Card (Prediction) -->
                 <section class="clean-card chart-container" style="margin-bottom: 1.5rem;">
                     <div class="chart-header-row" style="flex-wrap: wrap; gap: 10px;">
-                        <h2 class="section-title"><i class="fa-solid fa-chart-area"></i> 미래 30일 트렌드 예측 시각화</h2>
+                        <h2 class="section-title"><i class="fa-solid fa-chart-area"></i> <span id="trend-chart-title">미래 30일 트렌드 예측 시각화</span></h2>
                         <div class="weather-controls" style="display: flex; gap: 12px; align-items: center; font-size: 0.85rem; margin-right: 10px;">
                             <label style="display: flex; align-items: center; gap: 5px; cursor: pointer; color: var(--text-main); font-weight: 500;">
                                 <input type="checkbox" id="chk-weather-temp" style="cursor: pointer; width: 15px; height: 15px;" checked>
@@ -350,12 +340,13 @@
                         <p>표에서 키워드를 클릭하면 <strong>미래 예측 차트</strong>가 표시됩니다.</p>
                     </div>
                     <div id="trend-chart"></div>
+                    <div id="trend-chart-caption" class="chart-caption" style="display: none; text-align: center; margin-top: 10px; font-weight: bold; color: #000000; font-size: 0.95rem;"></div>
                 </section>
 
                 <!-- Chart Card (Backtest) -->
                 <section class="clean-card chart-container backtest-container">
                     <div class="chart-header-row">
-                        <h2 class="section-title"><i class="fa-solid fa-microscope"></i> 모델 정확도 검증 (과거 15일 백테스트)</h2>
+                        <h2 class="section-title"><i class="fa-solid fa-microscope"></i> <span id="backtest-chart-title">모델 정확도 검증 (과거 15일 백테스트)</span></h2>
                         <div style="display: flex; align-items: center; gap: 15px;">
                             <div class="zoom-controls" style="display: flex; gap: 6px; align-items: center;">
                                 <button id="btn-bt-zoom-in" class="clean-btn" title="확대 (+)" style="width: 30px; height: 30px; border-radius: 50%; background: #ffffff; border: 1px solid var(--card-border); color: var(--text-main); font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s ease; box-shadow: var(--shadow-sm);" onmouseover="this.style.background='var(--primary)'; this.style.color='white'; this.style.borderColor='var(--primary)';" onmouseout="this.style.background='#ffffff'; this.style.color='var(--text-main)'; this.style.borderColor='var(--card-border)';" onclick="this.blur()">
@@ -381,6 +372,7 @@
                         <p>표에서 키워드를 클릭하면 <strong>백테스트 검증 차트</strong>가 함께 표시됩니다.</p>
                     </div>
                     <div id="backtest-chart"></div>
+                    <div id="backtest-chart-caption" class="chart-caption" style="display: none; text-align: center; margin-top: 10px; font-weight: bold; color: #000000; font-size: 0.95rem;"></div>
                 </section>
 
                 <!-- Report Details -->

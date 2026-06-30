@@ -20,8 +20,8 @@ start powershell -NoExit -Command "python -m http.server 3000 --directory Fronte
 echo ⏳ 서버 구동 대기 중 (2초)...
 timeout /t 2 /nobreak > nul
 
-echo 🌐 브라우저를 통해 웹 사이트 접속 중...
-start http://localhost:3000
+echo 🌐 크롬 브라우저를 통해 웹 사이트 접속 중...
+start chrome http://localhost:3000 || start "" "%ProgramFiles%\Google\Chrome\Application\chrome.exe" http://localhost:3000 || start "" "%ProgramFiles(x86)%\Google\Chrome\Application\chrome.exe" http://localhost:3000 || start http://localhost:3000
 
 echo ==========================================
 echo 백엔드 서버: http://localhost:8000

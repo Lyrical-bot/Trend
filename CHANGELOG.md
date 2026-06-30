@@ -741,4 +741,18 @@ python -m http.server 5500
 
 ## **\*\*** 간단 시작 방법 **\*\*\***
 
+1. 원클릭 실행 (가장 편한 방법)
+   프로젝트 폴더 내의
+
+run.bat
+파일을 마우스로 더블 클릭만 해주시면 백엔드/프론트엔드가 순차적으로 켜지고, 크롬 브라우저로 http://localhost:3000 주소가 즉시 팝업으로 기동됩니다.
+
 🚀 백엔드 서버 즉시 기동 (FastAPI)
+.\venv\Scripts\python.exe Backend\main.py
+
+🚀 프론트엔드 서버 즉시 기동 (FastAPI)
+새 터미널에서 1번 실행
+
+1. python -m http.server 3000 --directory Frontend
+   새 터미널에서 2번 실행 (크롬으로 바로 실행)
+2. start chrome http://localhost:3000

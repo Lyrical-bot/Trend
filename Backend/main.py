@@ -38,7 +38,14 @@ def _get_scale_multiplier(data_list: list, monthly_volume: float, days_queried: 
     estimated_monthly = (total_ratio / max(1, recent_days)) * 30
     return monthly_volume / estimated_monthly if estimated_monthly > 0 else 1.0
 
-def _apply_scaling(items: list, multiplier: float, keys=("ratio", "yhat_lower", "yhat_upper")):
+# -------------------------------------------------------------
+# [수정일자: 2026-06-30]
+# [수정내용: _apply_scaling 함수의 디폴트 keys 인자에 예측값 실선
+#            'yhat'이 누락되어 과거 데이터는 실제 건수로 스케일링되는데
+#            미래 예측값은 0~100 사이의 작은 비율값으로 쪼그라들어
+#            차트 수치 왜곡 및 이상 현상을 일으키던 심각한 버그 해결.]
+# -------------------------------------------------------------
+def _apply_scaling(items: list, multiplier: float, keys=("ratio", "yhat", "yhat_lower", "yhat_upper")):
     """데이터 리스트의 지정된 키들에 배수를 곱합니다."""
     for item in items:
         for key in keys:
@@ -117,9 +124,16 @@ class PredictKeywordRequest(BaseModel):
     use_temp: Optional[bool] = Field(True, description="평균 기온 설명 변수 반영 여부")
     use_rain: Optional[bool] = Field(True, description="강수량 설명 변수 반영 여부")
 
+# -------------------------------------------------------------
+# [수정일자: 2026-06-30]
+# [수정내용: EvaluateRequest 스키마에 use_temp, use_rain 필드가
+#            누락되어 백테스트 API 호출 시 500 에러를 유발하던 문제 해결.]
+# -------------------------------------------------------------
 class EvaluateRequest(BaseModel):
     keyword: str = Field(..., description="백테스트할 단일 키워드")
     testDays: int = Field(15, description="테스트 구간 일수 (기본: 15일)")
+    use_temp: Optional[bool] = Field(True, description="평균 기온 설명 변수 반영 여부")
+    use_rain: Optional[bool] = Field(True, description="강수량 설명 변수 반영 여부")
 
 @app.post("/api/predict")
 async def predict_trend(payload: PredictRequest):
@@ -285,9 +299,6 @@ async def get_weak_signals_api(target_date: Optional[str] = None, use_live: bool
 # ===============================
 
 # === [Prophet 단일 키워드 예측 API 연동부] ===
-class PredictKeywordRequest(BaseModel):
-    keyword: str = Field(..., description="조회할 단일 키워드")
-    forecastSteps: int = Field(30, description="예측할 기간(일)의 수")
 
 @app.post("/api/predict-keyword")
 async def predict_single_keyword(payload: PredictKeywordRequest):
@@ -334,6 +345,12 @@ async def predict_single_keyword(payload: PredictKeywordRequest):
                 "isForecast": False
             })
 
+        # -------------------------------------------------------------
+        # [수정일자: 2026-06-30]
+        # [수정내용: chk-weather-temp 및 chk-weather-rain 체크 상태를
+        #            fastapi 요청 페이로드로부터 안전하게 전달받아
+        #            forecast_trend 인자로 주입하여 동적 학습 제어]
+        # -------------------------------------------------------------
         forecasted, summary = forecast_trend(
             historical_data=historical,
             time_unit="date",

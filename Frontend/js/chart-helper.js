@@ -199,9 +199,19 @@ class TrendChartHelper {
         });
 
         // 4. 날씨 정보 체크에 따른 series 추가 (CORS 및 이중 Y축 오버레이 데이터 연동)
+        // [수정일자: 2026-06-30]
+        // [수정내용: 사용자가 제공한 과거 5년치 기상 관측 데이터에 한해 차트에 표기하기 위해,
+        //            미래 예측 30일 구간(isForecast가 true인 날짜)에는 기온/강수량을 표시하지 않고 null 처리]
+        const isForecastDate = (dateStr) => {
+            if (!results || results.length === 0) return false;
+            const item = results[0].data.find(d => d.period === dateStr);
+            return item ? item.isForecast : false;
+        };
+
         if (weatherData && weatherData.length > 0) {
             if (showTemp) {
                 const tempData = allPeriods.map(p => {
+                    if (isForecastDate(p)) return null;
                     const wItem = weatherData.find(w => w.period === p);
                     return wItem ? wItem.avgTa : null;
                 });
@@ -214,6 +224,7 @@ class TrendChartHelper {
 
             if (showRain) {
                 const rainData = allPeriods.map(p => {
+                    if (isForecastDate(p)) return null;
                     const wItem = weatherData.find(w => w.period === p);
                     return wItem ? wItem.sumRn : null;
                 });
