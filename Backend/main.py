@@ -294,7 +294,8 @@ async def predict_single_keyword(payload: PredictKeywordRequest):
     try:
         from datetime import datetime, timedelta
         
-        end_date = datetime.now()
+        # 안정적인 데이터 조회를 위해 '어제'를 종료일로 설정합니다.
+        end_date = datetime.now() - timedelta(days=1)
         start_date = end_date - timedelta(days=720)
         start_date_str = start_date.strftime("%Y-%m-%d")
         end_date_str = end_date.strftime("%Y-%m-%d")
@@ -379,7 +380,8 @@ async def evaluate_single_keyword(payload: PredictKeywordRequest):
     try:
         from datetime import datetime, timedelta
         
-        end_date = datetime.now()
+        # 안정적인 데이터 조회를 위해 '어제'를 종료일로 설정합니다.
+        end_date = datetime.now() - timedelta(days=1)
         start_date = end_date - timedelta(days=3652)
         start_date_str = start_date.strftime("%Y-%m-%d")
         end_date_str = end_date.strftime("%Y-%m-%d")

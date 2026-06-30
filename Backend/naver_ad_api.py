@@ -6,6 +6,14 @@ import base64
 import httpx
 from typing import List, Dict
 from dotenv import load_dotenv
+import json
+import sys
+from datetime import datetime
+
+# Ensure sns_sensing is importable
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from sns_sensing.database.db import SessionLocal
+from sns_sensing.models.models import ApiCache
 
 # Backend/key/.env 경로를 동적으로 지정하여 환경 변수 로드
 dotenv_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env")
@@ -39,6 +47,32 @@ async def fetch_search_ad_volume(keywords: List[str]) -> Dict[str, float]:
     for i in range(0, len(keywords), chunk_size):
         chunk = keywords[i:i+chunk_size]
         hint_keywords = ",".join(chunk)
+        
+        # --- DB Caching Logic Start ---
+        request_hash_str = json.dumps({"hintKeywords": hint_keywords}, sort_keys=True)
+        request_hash = hashlib.sha256(request_hash_str.encode('utf-8')).hexdigest()
+        date_key = datetime.now().strftime("%Y-%m-%d")
+        
+        db = SessionLocal()
+        cached_result = None
+        try:
+            cached_record = db.query(ApiCache).filter(
+                ApiCache.api_name == "naver_ad_volume",
+                ApiCache.request_hash == request_hash,
+                ApiCache.date_key == date_key
+            ).first()
+            if cached_record:
+                cached_result = json.loads(cached_record.response_data)
+        finally:
+            db.close()
+            
+        if cached_result is not None:
+            print(f"[Info] 캐시된 네이버 검색광고 API 데이터를 불러옵니다. ({hint_keywords})")
+            for kw, vol in cached_result.items():
+                if kw in results:
+                    results[kw] = vol
+            continue
+        # --- DB Caching Logic End ---
 
         def _get_headers(l_key, s_key, c_id):
             ts = str(int(time.time() * 1000))
@@ -80,6 +114,25 @@ async def fetch_search_ad_volume(keywords: List[str]) -> Dict[str, float]:
 
                         if kw in results:
                             results[kw] = float(pc_cnt) + float(mo_cnt)
+                            
+                    # --- DB Caching Save Start ---
+                    db = SessionLocal()
+                    try:
+                        chunk_results = {k: results[k] for k in chunk if k in results}
+                        new_cache = ApiCache(
+                            api_name="naver_ad_volume",
+                            request_hash=request_hash,
+                            date_key=date_key,
+                            response_data=json.dumps(chunk_results, ensure_ascii=False)
+                        )
+                        db.add(new_cache)
+                        db.commit()
+                    except Exception as e:
+                        pass
+                    finally:
+                        db.close()
+                    # --- DB Caching Save End ---
+                    
                 elif response.status_code == 429 and license_key2 and secret_key2 and customer_id2:
                     print(f"[Info] 메인 검색광고 API 키 오류({response.status_code}). 예비 키(Key 2)로 재시도합니다...")
                     headers_fallback = _get_headers(license_key2, secret_key2, customer_id2)
@@ -94,6 +147,24 @@ async def fetch_search_ad_volume(keywords: List[str]) -> Dict[str, float]:
                             if isinstance(mo_cnt, str) and '<' in mo_cnt: mo_cnt = 5
                             if kw in results:
                                 results[kw] = float(pc_cnt) + float(mo_cnt)
+                                
+                        # --- DB Caching Save Start ---
+                        db = SessionLocal()
+                        try:
+                            chunk_results = {k: results[k] for k in chunk if k in results}
+                            new_cache = ApiCache(
+                                api_name="naver_ad_volume",
+                                request_hash=request_hash,
+                                date_key=date_key,
+                                response_data=json.dumps(chunk_results, ensure_ascii=False)
+                            )
+                            db.add(new_cache)
+                            db.commit()
+                        except Exception as e:
+                            pass
+                        finally:
+                            db.close()
+                        # --- DB Caching Save End ---
                     else:
                         print(f"[Error] 검색광고 예비 키 호출 실패 (상태 코드 {response2.status_code}): {response2.text}")
                 else:
