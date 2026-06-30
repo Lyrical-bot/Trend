@@ -20,23 +20,37 @@ except ImportError:
 
 from weather_api import fetch_weather_data
 
+# -------------------------------------------------------------
+# [수정일자: 2026-06-30]
+# [수정내용: 신생/급상승 키워드의 최근 30일 관심도가 거의 0에 수렴할 때
+#            스케일링 배수가 수천만 배로 기하급수적으로 폭발하여
+#            과거 그래프만 치솟고 최근/미래 곡선이 수평선(일자)으로
+#            납작하게 눌려 왜곡되던 심각한 수학적 결함을 해결하기 위해
+#            평균 비율 평활화, 최소 분모 보정 및 배수 500배 하드 상한선(Cap) 도입]
+# -------------------------------------------------------------
 def _get_scale_multiplier(data_list: list, monthly_volume: float, days_queried: int, time_unit: str = "date") -> float:
     """네이버 비율값(0~100)을 실제 검색 건수로 환산하기 위한 배수를 계산합니다."""
     if monthly_volume <= 0 or not data_list:
         return 1.0
         
-    # 광고 데이터(monthly_volume)가 '최근 30일' 기준이므로, 비율 총합도 '최근 30일' 치만 사용해야 10년 치 왜곡이 없습니다.
-    recent_data = data_list[-30:] if len(data_list) >= 30 else data_list
-    recent_days = len(recent_data)
-    
-    if time_unit == 'week':
-        recent_days *= 7
-    elif time_unit == 'month':
-        recent_days *= 30
+    # 1. 전체 조회 기간의 최대 비율 및 평균 비율을 추출
+    max_ratio = max(item["ratio"] for item in data_list)
+    if max_ratio <= 0:
+        return 1.0
         
-    total_ratio = sum(item["ratio"] for item in recent_data)
-    estimated_monthly = (total_ratio / max(1, recent_days)) * 30
-    return monthly_volume / estimated_monthly if estimated_monthly > 0 else 1.0
+    total_ratio_sum = sum(item["ratio"] for item in data_list)
+    avg_ratio = total_ratio_sum / len(data_list)
+    
+    # 2. 평균 비율을 활용해 한 달 기준 예상 검색량 매핑
+    estimated_monthly = avg_ratio * 30
+    
+    # [보정] 신생 키워드로 평균 비율이 0에 가깝다면 최대 비율의 10%를 최하한으로 설정해 분모 폭발을 예방
+    if estimated_monthly < 0.1:
+        estimated_monthly = max(estimated_monthly, max_ratio * 0.1 * 30)
+        
+    # 3. 배수(multiplier) 산출 후, 비상식적인 팽창을 막기 위해 500배를 절대 상한선으로 제한
+    multiplier = monthly_volume / estimated_monthly if estimated_monthly > 0 else 1.0
+    return min(500.0, multiplier)
 
 # -------------------------------------------------------------
 # [수정일자: 2026-06-30]
