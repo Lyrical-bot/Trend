@@ -538,6 +538,11 @@ def read_meta_accounts():
         raise HTTPException(status_code=500, detail="Meta API 모듈을 찾을 수 없습니다.")
     return get_meta_accounts()
 
+# === [프론트엔드 정적 파일 서빙] ===
+from fastapi.staticfiles import StaticFiles
+frontend_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "Frontend")
+app.mount("/", StaticFiles(directory=frontend_dir, html=True), name="frontend")
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="127.0.0.1", port=8000)
