@@ -413,7 +413,7 @@ async def evaluate_single_keyword(payload: PredictKeywordRequest):
         
         # 안정적인 데이터 조회를 위해 '어제'를 종료일로 설정합니다.
         end_date = datetime.now() - timedelta(days=1)
-        start_date = end_date - timedelta(days=3652)
+        start_date = end_date - timedelta(days=720)
         start_date_str = start_date.strftime("%Y-%m-%d")
         end_date_str = end_date.strftime("%Y-%m-%d")
         
@@ -422,7 +422,7 @@ async def evaluate_single_keyword(payload: PredictKeywordRequest):
 
         import asyncio
 
-        # 백테스트 학습 구간에 대응하는 10년치 기상 정보 병렬 수집
+        # 백테스트 학습 구간에 대응하는 2년치 기상 정보 병렬 수집
         naver_task = fetch_naver_trend(
             start_date=start_date_str,
             end_date=end_date_str,
