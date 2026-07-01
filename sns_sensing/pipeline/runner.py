@@ -86,7 +86,7 @@ def run_pipeline():
             }
             all_extracted_keywords.update(extracted_words)
 
-        # 260701 외래키 error 로 인해 추가한 코드
+        # [단계 2.5] 비디오 데이터를 DB에 선반영하여 외래키(ForeignKey) 에러 방지
         db.flush()
             
         # [단계 3] LLM 2차 배치 필터링 (비용 절감을 위해 한 번에 전송)
