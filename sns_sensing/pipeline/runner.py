@@ -145,6 +145,9 @@ def run_pipeline():
                 'words': extracted_words
             }
             extractor.add_document(extracted_words)
+
+        # 260701 외래키 error 로 인해 추가한 코드
+        db.flush()
             
         db.commit() # 중간 커밋
         

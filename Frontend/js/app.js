@@ -1,6 +1,12 @@
-const API_BASE_URL = 'http://127.0.0.1:8000';
+const API_BASE_URL = 'https://trend-fpe5hmgxazgtegg2.koreacentral-01.azurewebsites.net';
 
 document.addEventListener('DOMContentLoaded', () => {
+    // 새로고침 시 무조건 화면 맨 위 상단을 보여주도록 브라우저 스크롤 강제 복원 비활성화 및 스크롤 탑 이동
+    if ('scrollRestoration' in history) {
+        history.scrollRestoration = 'manual';
+    }
+    window.scrollTo(0, 0);
+
     // 1. DOM Elements
     const forecastForm = document.getElementById('forecast-form');
     const keywordGroupsContainer = document.getElementById('keyword-groups-container');
@@ -229,9 +235,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if (gender) payload.gender = gender;
         if (ages.length > 0) payload.ages = ages;
 
-        // 기상 변수 반영 옵션 파싱
-        const useTemp = document.getElementById('use-temp') ? document.getElementById('use-temp').checked : true;
-        const useRain = document.getElementById('use-rain') ? document.getElementById('use-rain').checked : true;
+        // 기상 변수 반영 옵션 파싱 (차트 영역 상단의 기온/강수량 체크박스 연동)
+        const useTemp = document.getElementById('chk-weather-temp') ? document.getElementById('chk-weather-temp').checked : true;
+        const useRain = document.getElementById('chk-weather-rain') ? document.getElementById('chk-weather-rain').checked : true;
         payload.use_temp = useTemp;
         payload.use_rain = useRain;
 
@@ -274,6 +280,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // 3. 리포트 본문 구성
             renderDetailedReport(data.results, payload.timeUnit);
+
+            // 차트 영역으로 자동 스크롤 이동
+            const trendSection = document.getElementById('trend-chart');
+            if (trendSection) {
+                trendSection.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
 
         } catch (err) {
             chartLoading.style.display = 'none';
@@ -653,9 +665,27 @@ window.fetchSingleKeywordForecast = async function (keyword) {
 
     const reportSection = document.getElementById('report-section');
 
-    // 상태 초기화
+    // 차트 제목 초기화
+    const trendTitle = document.getElementById('trend-chart-title');
+    const btTitle = document.getElementById('backtest-chart-title');
+    if (trendTitle) trendTitle.textContent = "미래 30일 트렌드 예측 시각화";
+    if (btTitle) btTitle.textContent = "모델 정확도 검증 (과거 15일 백테스트)";
+
     if (placeholder) placeholder.style.display = 'none';
     if (chartDiv) chartDiv.style.opacity = '0.3';
+    
+    // 로딩 시작 즉시 차트 날짜 밑에 검정색 검색 키워드 정보 노출
+    const trendCaption = document.getElementById('trend-chart-caption');
+    const btCaption = document.getElementById('backtest-chart-caption');
+    if (trendCaption) {
+        trendCaption.textContent = `검색한 키워드: ${keyword}`;
+        trendCaption.style.display = 'block';
+    }
+    if (btCaption) {
+        btCaption.textContent = `검색한 키워드: ${keyword}`;
+        btCaption.style.display = 'block';
+    }
+
     if (loading) {
         loading.style.display = 'flex';
         if (loadingMsg) loadingMsg.innerHTML = `<strong>${keyword}</strong> 과거 1년 데이터 수집 및 미래 30일 예측 수행 중...`;
@@ -668,9 +698,9 @@ window.fetchSingleKeywordForecast = async function (keyword) {
         if (btLoadingMsg) btLoadingMsg.innerHTML = `<strong>${keyword}</strong> 1년치 과거 데이터 분할 백테스트 수행 중...`;
     }
 
-    // 기상 변수 반영 옵션 파싱
-    const useTemp = document.getElementById('use-temp') ? document.getElementById('use-temp').checked : true;
-    const useRain = document.getElementById('use-rain') ? document.getElementById('use-rain').checked : true;
+    // 기상 변수 반영 옵션 파싱 (차트 영역 상단의 기온/강수량 체크박스 연동)
+    const useTemp = document.getElementById('chk-weather-temp') ? document.getElementById('chk-weather-temp').checked : true;
+    const useRain = document.getElementById('chk-weather-rain') ? document.getElementById('chk-weather-rain').checked : true;
 
     try {
         // 두 개의 API 병렬 호출
@@ -709,9 +739,17 @@ window.fetchSingleKeywordForecast = async function (keyword) {
             const showRain = document.getElementById('chk-weather-rain') ? document.getElementById('chk-weather-rain').checked : false;
 
             window.trendChartHelper.renderChart(formattedResults, false, predictResult.weather, showTemp, showRain);
+
+            // 미래 예측 차트 제목 업데이트
+            const trendTitle = document.getElementById('trend-chart-title');
+            if (trendTitle) {
+                trendTitle.textContent = `미래 30일 트렌드 예측 시각화: [${keyword}]`;
+            }
         } else {
             alert(`예측 실패: ${predictResult.detail || predictResult.error || '알 수 없는 오류'}`);
             if (placeholder) placeholder.style.display = 'flex';
+            const trendCaption = document.getElementById('trend-chart-caption');
+            if (trendCaption) trendCaption.style.display = 'none';
         }
 
         // 2. 백테스트 차트 렌더링
@@ -724,8 +762,16 @@ window.fetchSingleKeywordForecast = async function (keyword) {
                 keywords: [evaluateResult.keyword],
                 data: evaluateResult.data
             }], true);
+
+            // 백테스트 차트 제목 업데이트
+            const btTitle = document.getElementById('backtest-chart-title');
+            if (btTitle) {
+                btTitle.textContent = `모델 정확도 검증: [${keyword}] (과거 15일 백테스트)`;
+            }
         } else {
             if (btPlaceholder) btPlaceholder.style.display = 'flex';
+            const btCaption = document.getElementById('backtest-chart-caption');
+            if (btCaption) btCaption.style.display = 'none';
         }
 
         // 3. 리포트 렌더링
@@ -750,11 +796,22 @@ window.fetchSingleKeywordForecast = async function (keyword) {
             document.getElementById('report-insights').innerHTML = insightsHtml;
         }
 
+        // 차트 영역으로 자동 스크롤 이동
+        const trendSection = document.getElementById('trend-chart');
+        if (trendSection) {
+            trendSection.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+
     } catch (error) {
         if (loading) loading.style.display = 'none';
         if (chartDiv) chartDiv.style.opacity = '1';
         if (btLoading) btLoading.style.display = 'none';
         if (btChartDiv) btChartDiv.style.opacity = '1';
+
+        const trendCaption = document.getElementById('trend-chart-caption');
+        const btCaption = document.getElementById('backtest-chart-caption');
+        if (trendCaption) trendCaption.style.display = 'none';
+        if (btCaption) btCaption.style.display = 'none';
 
         alert('서버와 통신하는 중 오류가 발생했습니다.');
 
@@ -778,9 +835,23 @@ window.fetchSnsTrend = async function() {
     const chartDiv = document.getElementById('sns-chart');
     const metricsContainer = document.getElementById('sns-metrics-container');
     
+    // 차트 제목 초기화
+    const snsTitle = document.getElementById('sns-chart-title');
+    if (snsTitle) {
+        snsTitle.textContent = "유튜브 SNS 트렌드 4대 지표 추적 (MVP)";
+    }
+
     if (placeholder) placeholder.style.display = 'none';
     if (chartDiv) chartDiv.style.display = 'none';
     if (metricsContainer) metricsContainer.style.display = 'none';
+    
+    // 로딩 시작 즉시 차트 날짜 밑에 검정색 검색 키워드 정보 노출
+    const snsCaption = document.getElementById('sns-chart-caption');
+    if (snsCaption) {
+        snsCaption.textContent = `검색한 키워드: ${keyword}`;
+        snsCaption.style.display = 'block';
+    }
+
     if (loading) loading.style.display = 'flex';
 
     try {
@@ -792,6 +863,8 @@ window.fetchSnsTrend = async function() {
         if (!response.ok) {
             alert(`분석 실패: ${result.detail || '알 수 없는 오류'}`);
             if (placeholder) placeholder.style.display = 'block';
+            const snsCaption = document.getElementById('sns-chart-caption');
+            if (snsCaption) snsCaption.style.display = 'none';
             return;
         }
 
@@ -1057,11 +1130,25 @@ window.fetchSnsTrend = async function() {
 
             window.snsApexChart = new ApexCharts(chartDiv, options);
             window.snsApexChart.render();
+
+            // 유튜브 SNS 언급량 차트 제목 업데이트
+            const snsTitle = document.getElementById('sns-chart-title');
+            if (snsTitle) {
+                snsTitle.textContent = `유튜브 SNS 트렌드 4대 지표 추적: [${keyword}]`;
+            }
+
+            // 유튜브 차트 영역으로 자동 스크롤 이동
+            const snsSection = document.getElementById('sns-chart');
+            if (snsSection) {
+                snsSection.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
         }
 
     } catch (error) {
         if (loading) loading.style.display = 'none';
         if (placeholder) placeholder.style.display = 'block';
+        const snsCaption = document.getElementById('sns-chart-caption');
+        if (snsCaption) snsCaption.style.display = 'none';
         alert('SNS 트렌드 분석 중 오류가 발생했습니다.');
     }
 };

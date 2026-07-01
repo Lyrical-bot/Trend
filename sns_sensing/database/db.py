@@ -38,6 +38,17 @@ is_sqlite = DATABASE_URL.startswith("sqlite")
 connect_args = {"check_same_thread": False} if is_sqlite else {}
 
 engine = create_engine(DATABASE_URL, connect_args=connect_args)
+
+# [자동 마이그레이션] PostgreSQL 등에서 videos 테이블에 subscriber_count 컬럼이 누락된 경우 자동 생성
+if not is_sqlite:
+    from sqlalchemy import text
+    try:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE videos ADD COLUMN IF NOT EXISTS subscriber_count INTEGER DEFAULT 0;"))
+            print("[Migration] Checked/Added subscriber_count column to videos table.")
+    except Exception as migration_error:
+        print(f"[Warning] Failed to run migration for subscriber_count: {migration_error}")
+
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 

@@ -1,8 +1,26 @@
+# -------------------------------------------------------------
+# [수정일자: 2026-06-30]
+# [수정내용: 가상환경(venv) 백그라운드 구동 시 Windows OS가
+#            CmdStan의 C++ 컴파일 및 실행을 위한 PATH 및 DLL 경로
+#            (bin, tbb.dll 등)를 찾지 못해 stan_backend 누락 에러가
+#            발생하는 현상을 해결하기 위해 시스템 PATH 변수 강제 보강]
+# -------------------------------------------------------------
+import os
+os.environ["CMDSTAN"] = r"C:\Users\EL043\.cmdstan\cmdstan-2.39.0"
+os.environ["PATH"] += (
+    r";C:\Users\EL043\.cmdstan\cmdstan-2.39.0\bin"
+    r";C:\Users\EL043\.cmdstan\cmdstan-2.39.0\stan\lib\stan_math\lib\tbb"
+)
+
 import pandas as pd
 import numpy as np
+import threading
 from datetime import datetime, timedelta
 from typing import List, Dict, Any, Tuple
 from prophet import Prophet
+
+# Prophet Stan backend 동시 컴파일/피팅 충돌 방지를 위한 전역 락
+_PROPHET_FIT_LOCK = threading.Lock()
 
 MIN_TRAIN_POINTS = 30
 
@@ -72,6 +90,13 @@ def _build_model(time_unit: str, use_yearly: bool, use_temp: bool = True, use_ra
         pass
     return model
 
+# -------------------------------------------------------------
+# [수정일자: 2026-06-30]
+# [수정내용: 병렬 API(predict와 evaluate) 실행 도중 CmdStanPy가
+#            동시 피팅을 수행할 때 발생하는 파일/스탠 컴파일러 충돌
+#            ('Prophet' object has no attribute 'stan_backend')을
+#            해결하기 위해 _PROPHET_FIT_LOCK 동기식 스레드 락 적용]
+# -------------------------------------------------------------
 def _fit_model(df: pd.DataFrame, time_unit: str, use_temp: bool = True, use_rain: bool = True) -> Prophet:
     use_yearly = _use_yearly_seasonality(df)
     # 10년 치 데이터(계절성 있음)일 경우 정상적인 여름 피크가 아웃라이어로 잘려나가는 것을 방지
@@ -84,7 +109,11 @@ def _fit_model(df: pd.DataFrame, time_unit: str, use_temp: bool = True, use_rain
     has_rain = use_rain and 'rain' in train_df.columns
     
     model = _build_model(time_unit, use_yearly, use_temp=has_temp, use_rain=has_rain)
-    model.fit(train_df)
+    
+    # Stan backend 동시 피팅 파일 접근 충돌 방지 락 획득
+    with _PROPHET_FIT_LOCK:
+        model.fit(train_df)
+        
     return model
 
 def _inverse_forecast_value(value: float) -> float:
@@ -224,6 +253,12 @@ def _rolling_backtest(
         "results": fold_results
     }
 
+# -------------------------------------------------------------
+# [수정일자: 2026-06-30]
+# [수정내용: 사용자의 기상 체크 옵션 플래그(use_temp, use_rain)에 부합할 때만
+#            Prophet 설명 변수(Regressor)를 추가하고, 데이터프레임 병합 시
+#            선택된 설명 변수 컬럼만 추려 결측치 보간 연산을 처리하도록 분기 보완]
+# -------------------------------------------------------------
 def forecast_trend(
     historical_data: List[Dict[str, Any]],
     time_unit: str,

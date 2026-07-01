@@ -141,6 +141,21 @@ def init_scheduler():
         t1 = threading.Thread(target=sync_run_food_collection_job)
         t1.start()
         
-    print("유튜브 트렌드 수집기(SNS Sensing) 1회차 즉시 가동을 시작합니다...")
-    t2 = threading.Thread(target=run_pipeline)
-    t2.start()
+    # [수정] DB에 이미 동영상 데이터가 수집되어 있다면, 서버 시작 시 즉시 가동하는 것을 생략하여 자원 고갈(OOM/Timeout) 방지
+    pipeline_needs_immediate_run = True
+    try:
+        from sns_sensing.database.db import SessionLocal
+        from sns_sensing.models.models import Video
+        db = SessionLocal()
+        exists = db.query(Video).first()
+        if exists:
+            pipeline_needs_immediate_run = False
+            print("DB에 기존 유튜브 데이터가 존재하므로 초기 즉시 가동을 생략합니다. (3시간 주기 스케줄러로만 작동)")
+        db.close()
+    except Exception as check_err:
+        print(f"유튜브 DB 확인 중 오류 발생, 즉시 가동을 시도합니다: {check_err}")
+
+    if pipeline_needs_immediate_run:
+        print("유튜브 트렌드 수집기(SNS Sensing) 1회차 즉시 가동을 시작합니다...")
+        t2 = threading.Thread(target=run_pipeline)
+        t2.start()
