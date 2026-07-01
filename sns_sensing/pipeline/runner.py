@@ -85,6 +85,9 @@ def run_pipeline():
                 'words': extracted_words
             }
             all_extracted_keywords.update(extracted_words)
+
+        # 260701 외래키 error 로 인해 추가한 코드
+        db.flush()
             
         # [단계 3] LLM 2차 배치 필터링 (비용 절감을 위해 한 번에 전송)
         valid_food_keywords = set()
