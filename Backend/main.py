@@ -267,8 +267,11 @@ async def get_velocity_ranking_api(start_date: Optional[str] = None, end_date: O
 
     # 1. 캐시 데이터가 존재하면 우선적으로 캐시를 반환하여 데이터 유실 404 에러를 방지합니다.
     if os.path.exists(VELOCITY_CACHE):
-        with open(VELOCITY_CACHE, "r", encoding="utf-8") as f:
-            return json.load(f)
+        try:
+            with open(VELOCITY_CACHE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception as e:
+            print(f"[Warning] Failed to load VELOCITY_CACHE: {e}")
 
     # 2. 캐시가 없고 실시간 분석 모듈이 존재하면 실시간 분석을 수행합니다.
     if get_velocity_ranking is not None:
@@ -294,8 +297,11 @@ async def get_weak_signals_api(target_date: Optional[str] = None, use_live: bool
     
     # 1. 약점 신호 캐시가 존재하면 우선 반환합니다.
     if os.path.exists(WEAK_SIGNALS_CACHE):
-        with open(WEAK_SIGNALS_CACHE, "r", encoding="utf-8") as f:
-            return json.load(f)
+        try:
+            with open(WEAK_SIGNALS_CACHE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception as e:
+            print(f"[Warning] Failed to load WEAK_SIGNALS_CACHE: {e}")
             
     # 2. 캐시가 없을 시 실시간 랭킹 연산을 수행합니다.
     if detect_weak_signals is not None:
