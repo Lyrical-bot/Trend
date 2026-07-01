@@ -11,6 +11,7 @@ datasets_dir = os.path.join(parent_dir, "datasets")
 
 WEAK_SIGNALS_CACHE = os.path.join(datasets_dir, "cached_food_signals.json")
 VELOCITY_CACHE = os.path.join(datasets_dir, "cached_food_velocity.json")
+YOUTUBE_SEEDS_CACHE = os.path.join(datasets_dir, "cached_youtube_seeds.json")
 
 # 수집 중인지 상태를 기록하는 파일 (Lock)
 LOCK_FILE = os.path.join(datasets_dir, "scheduler_lock.txt")
@@ -35,7 +36,7 @@ async def run_food_collection_job():
             print("키워드 수집에 실패했습니다. 다음 주기에 다시 시도합니다.")
             return
             
-        print(f"✅ Top 500 키워드 수집 완료. 분석을 시작합니다 (키워드 수: {len(keywords)})")
+        print(f"[Success] Top 500 키워드 수집 완료. 분석을 시작합니다 (키워드 수: {len(keywords)})")
         
         # 3. Weak Signal 분석 및 저장
         print("  -> Weak Signal 점수 계산 중...")
@@ -54,8 +55,53 @@ async def run_food_collection_job():
         with open(VELOCITY_CACHE, "w", encoding="utf-8") as f:
             json.dump({"data": velocity_data, "updated_at": datetime.now().strftime('%Y-%m-%d %H:%M:%S')}, f, ensure_ascii=False)
             
-        print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] 백그라운드 데이터 수집 및 캐싱 완료!")
+        print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] 기존 백그라운드 데이터 수집 및 캐싱 완료!")
         
+        # 5. 유튜브 수집용 동적 시드(Seed) 풀 업데이트 (5개 세부 카테고리)
+        print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] 유튜브 검색 시드용 세부 카테고리 확장을 시작합니다...")
+        
+        TARGET_CIDS = {
+            "유가공품": "50000150",
+            "다이어트식품": "50000024",
+            "빵/베이커리": "50022959",
+            "스낵/과자": "50022619",
+            "젤리/사탕/초콜릿": "50022439"
+        }
+        
+        youtube_seeds = {}
+        for cat_name, cid in TARGET_CIDS.items():
+            print(f"  -> [{cat_name}] 카테고리 키워드 수집 중...")
+            # 초기 트렌드(초동)를 잡기 위해 30일이 아닌 최근 7일(주간) 기준으로 좁힘
+            cat_keywords = await fetch_datalab_top_keywords(cid=cid, count=500, days_ago=7)
+            if not cat_keywords:
+                continue
+                
+            # 가중치 부여 (1~50위: 5, 51~150위: 3, 151~300위: 2, 301~500위: 1)
+            for idx, kw in enumerate(cat_keywords):
+                rank = idx + 1
+                if rank <= 50:
+                    weight = 5
+                elif rank <= 150:
+                    weight = 3
+                elif rank <= 300:
+                    weight = 2
+                else:
+                    weight = 1
+                    
+                # 이미 수집된 키워드라면 더 높은 가중치 유지
+                if kw in youtube_seeds:
+                    youtube_seeds[kw] = max(youtube_seeds[kw], weight)
+                else:
+                    youtube_seeds[kw] = weight
+                    
+            await asyncio.sleep(1.0) # API 예의 (딜레이)
+            
+        if youtube_seeds:
+            with open(YOUTUBE_SEEDS_CACHE, "w", encoding="utf-8") as f:
+                json.dump({"data": youtube_seeds, "updated_at": datetime.now().strftime('%Y-%m-%d %H:%M:%S')}, f, ensure_ascii=False, indent=2)
+            print(f"[Success] 유튜브 시드 {len(youtube_seeds)}개 갱신 완료 (cached_youtube_seeds.json 저장)")
+        
+        print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] 모든 백그라운드 수집 작업 완료!")
     except Exception as e:
         print(f"백그라운드 수집 중 에러 발생: {e}")
     finally:

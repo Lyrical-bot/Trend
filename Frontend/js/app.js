@@ -1,4 +1,4 @@
-const API_BASE_URL = 'https://trend-fpe5hmgxazgtegg2.koreacentral-01.azurewebsites.net';
+const API_BASE_URL = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') ? 'http://localhost:8000' : 'https://trend-fpe5hmgxazgtegg2.koreacentral-01.azurewebsites.net';
 
 document.addEventListener('DOMContentLoaded', () => {
     // 새로고침 시 무조건 화면 맨 위 상단을 보여주도록 브라우저 스크롤 강제 복원 비활성화 및 스크롤 탑 이동
@@ -1009,6 +1009,88 @@ window.fetchSnsTrend = async function(keywordArg) {
                     }
                     
                     msgEl.textContent = synData.message;
+                    
+                    // [추가] 시계열 지표(Trend Metrics) 오버라이드 및 콜드스타트 폴백 처리
+                    if (synData.trend_metrics) {
+                        const metrics = synData.trend_metrics;
+                        
+                        const elGrowth = document.getElementById('sns-metric-growth');
+                        if (elGrowth && metrics.growth_rate !== undefined) {
+                            if (metrics.growth_rate === null) {
+                                if (metrics.past_upload_count === 0) {
+                                    // 완전 신규 진입 (비교 대상 없음)
+                                    elGrowth.textContent = `신규 진입 · 첫 관측 ✨`;
+                                    elGrowth.style.color = "#8b5cf6"; // 보라색
+                                } else {
+                                    // 저밀도 백필 구간 (데이터 축적 중)
+                                    const dDay = 7 - (metrics.db_days_active || 0);
+                                    elGrowth.textContent = `데이터 축적 중 (D-${dDay > 0 ? dDay : 1})`;
+                                    elGrowth.style.color = "#94a3b8"; // 회색
+                                }
+                            } else {
+                                elGrowth.innerHTML = `${metrics.growth_rate > 0 ? '+' : ''}${metrics.growth_rate}%`;
+                                elGrowth.style.color = metrics.growth_rate > 50 ? "#ef4444" : (metrics.growth_rate > 0 ? "#f97316" : "#6b7280");
+                                
+                                // 초기 저밀도 구간(7~13일)인 경우 참고용 배지 추가
+                                if (metrics.is_low_res_growth) {
+                                    elGrowth.innerHTML += `<span style="font-size: 0.5em; margin-left: 8px; padding: 2px 6px; background-color: #fef08a; color: #854d0e; border-radius: 4px; vertical-align: middle;">⚠️초기 산출(참고용)</span>`;
+                                }
+                            }
+                        }
+                        
+                        const elDiv = document.getElementById('sns-metric-diversity');
+                        if (elDiv && metrics.channel_diversity !== undefined) {
+                            elDiv.textContent = `${metrics.channel_diversity}개 채널`;
+                            elDiv.style.color = metrics.channel_diversity >= 3 ? "#10b981" : (metrics.channel_diversity >= 2 ? "#3b82f6" : "#ef4444");
+                        }
+                        
+                        // 차트 폴백(Blur) 뱃지 로직 완전 삭제 (차트는 항상 뚜렷하게 보이도록 함)
+                        const chartDiv = document.getElementById('sns-chart');
+                        if (chartDiv) {
+                            chartDiv.style.filter = "none";
+                            chartDiv.style.opacity = "1";
+                            const fallbackBadge = document.getElementById('cold-start-fallback-badge');
+                            if (fallbackBadge) fallbackBadge.remove();
+                        }
+                    }
+                    
+                    // [추가] 시각적 증거(Top Videos) 렌더링
+                    const topVideosContainer = document.getElementById('top-videos-container');
+                    const topVideosList = document.getElementById('top-videos-list');
+                    if (topVideosContainer && topVideosList) {
+                        if (synData.top_videos && synData.top_videos.length > 0) {
+                            topVideosList.innerHTML = '';
+                            synData.top_videos.forEach(video => {
+                                const badgeHtml = video.is_shorts 
+                                    ? '<span style="position: absolute; top: 8px; right: 8px; background: #ef4444; color: white; padding: 2px 6px; border-radius: 4px; font-size: 0.7rem; font-weight: bold;">🔥바이럴 쇼츠</span>'
+                                    : '<span style="position: absolute; top: 8px; right: 8px; background: #3b82f6; color: white; padding: 2px 6px; border-radius: 4px; font-size: 0.7rem; font-weight: bold;">📺상세 리뷰</span>';
+                                    
+                                const card = document.createElement('div');
+                                card.style.cssText = 'background: rgba(30, 41, 59, 0.7); border: 1px solid rgba(148, 163, 184, 0.1); border-radius: 8px; overflow: hidden; cursor: pointer; transition: transform 0.2s; position: relative;';
+                                card.onclick = () => window.open(`https://www.youtube.com/watch?v=${video.video_id}`, '_blank');
+                                card.onmouseover = () => card.style.transform = 'translateY(-3px)';
+                                card.onmouseout = () => card.style.transform = 'translateY(0)';
+                                
+                                card.innerHTML = `
+                                    <div style="position: relative;">
+                                        <img src="${video.thumbnail_url}" style="width: 100%; height: 120px; object-fit: cover; display: block;" alt="Thumbnail">
+                                        ${badgeHtml}
+                                    </div>
+                                    <div style="padding: 10px;">
+                                        <div style="font-size: 0.9rem; font-weight: bold; margin-bottom: 6px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.3;">${video.title}</div>
+                                        <div style="font-size: 0.75rem; color: #94a3b8; display: flex; justify-content: space-between; align-items: center;">
+                                            <span style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100px;"><i class="fa-solid fa-user"></i> ${video.channel_title}</span>
+                                            <span style="color: #ef4444;"><i class="fa-solid fa-fire"></i> ${(video.engagement_rate * 100).toFixed(1)}%</span>
+                                        </div>
+                                    </div>
+                                `;
+                                topVideosList.appendChild(card);
+                            });
+                            topVideosContainer.style.display = 'block';
+                        } else {
+                            topVideosContainer.style.display = 'none';
+                        }
+                    }
                 }
             } catch(e) {
                 console.error("Trend Synthesis API Error:", e);
@@ -1119,12 +1201,30 @@ window.fetchDiscoveredKeywords = async function() {
         keywords.forEach(k => {
             const chip = document.createElement('button');
             chip.type = 'button';
-            chip.style.cssText = 'background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); color: #ef4444; border-radius: 20px; padding: 4px 12px; font-size: 0.85rem; cursor: pointer; transition: all 0.2s;';
-            chip.innerHTML = `#${k.keyword} <span style="opacity: 0.6; font-size: 0.75rem; margin-left: 4px;">${k.mentions}</span>`;
+            // 등급에 따라 색상 분기 (90점 이상: 핫핑크/빨강, 70점 이상: 주황, 55점 이상: 노랑, 그 이하: 회색)
+            let bgColor = 'rgba(239, 68, 68, 0.1)';
+            let borderColor = 'rgba(239, 68, 68, 0.3)';
+            let textColor = '#ef4444';
+            
+            if (k.score < 55) {
+                bgColor = 'rgba(156, 163, 175, 0.1)';
+                borderColor = 'rgba(156, 163, 175, 0.3)';
+                textColor = '#9ca3af';
+            } else if (k.score < 70) {
+                bgColor = 'rgba(245, 158, 11, 0.1)';
+                borderColor = 'rgba(245, 158, 11, 0.3)';
+                textColor = '#f59e0b';
+            }
+
+            chip.style.cssText = `background: ${bgColor}; border: 1px solid ${borderColor}; color: ${textColor}; border-radius: 20px; padding: 4px 12px; font-size: 0.85rem; cursor: pointer; transition: all 0.2s;`;
+            chip.innerHTML = `#${k.keyword} <span style="opacity: 0.8; font-size: 0.75rem; margin-left: 4px;">${k.score}점</span>`;
+            
+            // 호버 시 자세한 스펙 툴팁 제공
+            chip.title = `[${k.grade}]\n독립 채널: ${k.channel_diversity}개\n업로드: ${k.video_count}개\n평균 조회수: ${k.avg_views.toLocaleString()}회\n평균 구독자: ${k.avg_subs.toLocaleString()}명`;
             
             // 호버 효과
-            chip.onmouseover = () => { chip.style.background = 'rgba(239, 68, 68, 0.2)'; };
-            chip.onmouseout = () => { chip.style.background = 'rgba(239, 68, 68, 0.1)'; };
+            chip.onmouseover = () => { chip.style.background = borderColor; };
+            chip.onmouseout = () => { chip.style.background = bgColor; };
             
             // 클릭 시 검색창에 넣고 자동 분석!
             chip.onclick = () => {

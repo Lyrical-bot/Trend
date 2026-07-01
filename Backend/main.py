@@ -2,7 +2,7 @@ import os
 from dotenv import load_dotenv
 
 # 전역 환경변수 .env 로드
-dotenv_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "key", ".env")
+dotenv_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env")
 load_dotenv(dotenv_path=dotenv_path)
 
 from fastapi import FastAPI, HTTPException
@@ -524,12 +524,131 @@ async def get_trend_synthesis(keyword: str):
         phase = "OBSERVE"
         message = f"유튜브 확산 지표가 낮고 네이버 검색량도 {monthly_volume:,.0f}건으로 뚜렷한 확산 신호가 감지되지 않았습니다. 지속적인 관망이 필요합니다."
         
+    # [추가] 4. 시계열 추세 분석 (KeywordStat) 및 가속도 기반 Top 3 영상 추출
+    from sns_sensing.models.models import VideoStat, KeywordStat
+    from sqlalchemy.sql import func
+    from datetime import datetime, timedelta
+    
+    top_videos = []
+    trend_metrics = {
+        "recent_upload_count": 0,
+        "past_upload_count": 0,
+        "growth_rate": 0,
+        "channel_diversity": 0
+    }
+    
+    try:
+        now = datetime.now()
+        recent_7d_start = now - timedelta(days=7)
+        past_7d_start = now - timedelta(days=14)
+        
+        # DB 수집 활성 기간 계산 (가장 오래된 collected_at 기준)
+        oldest_collected = db.query(func.min(Video.collected_at)).scalar()
+        if oldest_collected:
+            db_days_active = (now - oldest_collected).days
+        else:
+            db_days_active = 0
+            
+        trend_metrics["db_days_active"] = db_days_active
+
+        # 시계열 추세 분석 (최근 7일 vs 과거 7일)
+        recent_stats = db.query(
+            func.sum(KeywordStat.mention_count).label('mentions'),
+            func.sum(KeywordStat.channel_count).label('channels')
+        ).filter(KeywordStat.keyword == keyword, KeywordStat.hour >= recent_7d_start).first()
+        
+        past_stats = db.query(
+            func.sum(KeywordStat.mention_count).label('mentions')
+        ).filter(KeywordStat.keyword == keyword, KeywordStat.hour >= past_7d_start, KeywordStat.hour < recent_7d_start).first()
+        
+        recent_mentions = recent_stats.mentions or 0
+        past_mentions = past_stats.mentions or 0
+        trend_metrics["recent_upload_count"] = recent_mentions
+        trend_metrics["past_upload_count"] = past_mentions
+        trend_metrics["channel_diversity"] = recent_stats.channels or 0
+        
+        if db_days_active >= 7 and db_days_active < 14:
+            trend_metrics["is_low_res_growth"] = True
+        else:
+            trend_metrics["is_low_res_growth"] = False
+            
+        if db_days_active < 7:
+            # 과거 7일 비교군 자체가 확보되지 않은 초기 구간
+            trend_metrics["growth_rate"] = None
+        else:
+            if past_mentions > 0:
+                trend_metrics["growth_rate"] = int(((recent_mentions - past_mentions) / past_mentions) * 100)
+            else:
+                # 과거에 전혀 언급되지 않은 완전 신규 진입 (비교 대상 없음)
+                trend_metrics["growth_rate"] = None # 완전 신규 진입이므로 계산 불가(null)
+            
+        # Top 3 영상 추출 (최근 2개월 내 영상 대상, Trend Velocity Score 기반)
+        two_months_ago = now - timedelta(days=60)
+        
+        keyword_video_ids = [row[0] for row in db.query(Keyword.video_id).filter(Keyword.keyword == keyword).all()]
+        if keyword_video_ids:
+            latest_stats_subquery = db.query(
+                VideoStat.video_id,
+                func.max(VideoStat.id).label('max_id')
+            ).filter(VideoStat.video_id.in_(keyword_video_ids)).group_by(VideoStat.video_id).subquery()
+
+            latest_stats = db.query(VideoStat).join(
+                latest_stats_subquery, 
+                (VideoStat.video_id == latest_stats_subquery.c.video_id) & (VideoStat.id == latest_stats_subquery.c.max_id)
+            ).all()
+
+            video_list = []
+            for stat in latest_stats:
+                v = db.query(Video).filter(Video.video_id == stat.video_id, Video.published_at >= two_months_ago).first()
+                if v:
+                    views = stat.view_count or 1
+                    engagements = (stat.like_count or 0) + (stat.comment_count or 0)
+                    engagement_rate = engagements / views if views > 0 else 0
+                    
+                    # 최근성 가중치 (Recency Weight)
+                    days_old = (now - v.published_at).days
+                    if days_old <= 7:
+                        weight = 1.2
+                    elif days_old <= 30:
+                        weight = 1.0
+                    else:
+                        weight = 0.5
+                        
+                    # 가속도 점수 = 총 참여수 * 가중치 (조회수 * 참여율 = 총 참여수)
+                    velocity_score = engagements * weight
+                    
+                    is_shorts = False
+                    if "#shorts" in v.title.lower() or (v.description and "#shorts" in v.description.lower()):
+                        is_shorts = True
+                        
+                    video_list.append({
+                        "video_id": v.video_id,
+                        "title": v.title,
+                        "channel_title": v.channel_title,
+                        "published_at": v.published_at.strftime("%Y-%m-%d"),
+                        "thumbnail_url": f"https://img.youtube.com/vi/{v.video_id}/mqdefault.jpg",
+                        "view_count": stat.view_count,
+                        "engagement_rate": engagement_rate,
+                        "is_shorts": is_shorts,
+                        "velocity_score": velocity_score
+                    })
+            
+            # Trend Velocity Score 순으로 정렬하여 Top 3 추출
+            video_list.sort(key=lambda x: x['velocity_score'], reverse=True)
+            top_videos = video_list[:3]
+    except Exception as e:
+        print(f"Fetch Top Videos Error: {e}")
+    finally:
+        db.close()
+        
     return {
         "keyword": keyword,
         "phase": phase,
         "message": message,
         "sns_signals": sns_signals,
-        "naver_monthly_volume": monthly_volume
+        "naver_monthly_volume": monthly_volume,
+        "trend_metrics": trend_metrics,
+        "top_videos": top_videos
     }
 
 @app.get("/api/meta-accounts")

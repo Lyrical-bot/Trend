@@ -142,3 +142,35 @@ class ApiCache(Base):
     date_key = Column(String, nullable=False)
     response_data = Column(String, nullable=False)
     created_at = Column(DateTime, default=func.now())
+
+class BrandDictionary(Base):
+    __tablename__ = "brand_dictionary"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    brand_name = Column(String, nullable=False, unique=True)
+    created_at = Column(DateTime, default=func.now())
+
+class CanonicalKeyword(Base):
+    __tablename__ = "canonical_keywords"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    canonical_name = Column(String, nullable=False, unique=True, index=True)
+    brand_name = Column(String, nullable=True)
+    category = Column(String, nullable=True)
+    action = Column(String, nullable=True)
+    created_at = Column(DateTime, default=func.now())
+
+class RawKeywordMapping(Base):
+    __tablename__ = "raw_keyword_mapping"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    raw_keyword = Column(String, nullable=False, unique=True, index=True)
+    canonical_id = Column(Integer, ForeignKey("canonical_keywords.id"), nullable=False)
+    created_at = Column(DateTime, default=func.now())
+
+class CoOccurrence(Base):
+    __tablename__ = "co_occurrence"
+    __table_args__ = (
+        Index('idx_co_occurrence', 'keyword', 'co_keyword', unique=True),
+    )
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    keyword = Column(String, nullable=False)
+    co_keyword = Column(String, nullable=False)
+    count = Column(Integer, default=1)
