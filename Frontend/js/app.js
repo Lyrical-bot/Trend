@@ -1,4 +1,4 @@
-const API_BASE_URL = 'https://trend-fpe5hmgxazgtegg2.koreacentral-01.azurewebsites.net';
+const API_BASE_URL = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') ? 'http://localhost:8000' : 'https://trend-fpe5hmgxazgtegg2.koreacentral-01.azurewebsites.net';
 
 document.addEventListener('DOMContentLoaded', () => {
     // 새로고침 시 무조건 화면 맨 위 상단을 보여주도록 브라우저 스크롤 강제 복원 비활성화 및 스크롤 탑 이동
