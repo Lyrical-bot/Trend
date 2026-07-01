@@ -9,31 +9,36 @@ from datetime import datetime, timedelta
 import statistics
 from sns_sensing.models.models import KeywordStat, Video, Keyword, VideoStat
 
-def calculate_growth(db: Session, keyword: str, current_time: datetime) -> float:
+def calculate_growth(db: Session, keyword: str, current_time: datetime, trend_window_days: int = 7) -> float:
     """
     언급 증가율(Growth)을 계산합니다.
-    (최근 24시간 언급량) 대비 (과거 24시간 언급량)의 비율
+    '업로드 시점(published_at)' 기준으로 최근 N일 대비 과거 N일의 영상 개수 증가율.
+    베이지안 스무딩 (K=10)을 적용하여 작은 표본의 착시 현상(절벽 효과)을 방지합니다.
     """
-    recent_start = current_time - timedelta(days=1)
-    past_start = current_time - timedelta(days=2)
+    recent_start = current_time - timedelta(days=trend_window_days)
+    past_start = current_time - timedelta(days=trend_window_days * 2)
 
-    recent_count = db.query(func.sum(KeywordStat.mention_count)).filter(
-        KeywordStat.keyword == keyword,
-        KeywordStat.hour >= recent_start,
-        KeywordStat.hour <= current_time
+    # 최근 N일 업로드된 영상 수
+    recent_count = db.query(func.count(func.distinct(Video.video_id))).join(
+        Keyword, Keyword.video_id == Video.video_id
+    ).filter(
+        Keyword.keyword == keyword,
+        Video.published_at >= recent_start,
+        Video.published_at <= current_time
     ).scalar() or 0
 
-    past_count = db.query(func.sum(KeywordStat.mention_count)).filter(
-        KeywordStat.keyword == keyword,
-        KeywordStat.hour >= past_start,
-        KeywordStat.hour < recent_start
+    # 과거 N일 업로드된 영상 수
+    past_count = db.query(func.count(func.distinct(Video.video_id))).join(
+        Keyword, Keyword.video_id == Video.video_id
+    ).filter(
+        Keyword.keyword == keyword,
+        Video.published_at >= past_start,
+        Video.published_at < recent_start
     ).scalar() or 0
 
-
-    if past_count == 0:
-        return 100.0 if recent_count > 0 else 0.0
-    
-    growth = ((recent_count - past_count) / past_count) * 100
+    # 베이지안 스무딩 (K=10) 적용
+    K = 10
+    growth = ((recent_count - past_count) / (past_count + K)) * 100
     return round(growth, 2)
 
 def calculate_burst(db: Session, keyword: str, current_time: datetime) -> float:
@@ -51,15 +56,19 @@ def calculate_burst(db: Session, keyword: str, current_time: datetime) -> float:
     
     return float(recent_count)
 
-def calculate_channel_diversity(db: Session, keyword: str) -> dict:
+def calculate_channel_diversity(db: Session, keyword: str, current_time: datetime, trend_window_days: int = 7) -> dict:
     """
     채널 다양성(Channel Diversity)을 계산합니다.
+    (업로드 시점 기준 최근 N일 이내 영상 대상)
     """
+    recent_start = current_time - timedelta(days=trend_window_days)
+    
     stats = db.query(
         func.count(func.distinct(Video.channel_id)).label('unique_channels'),
-        func.count(Video.video_id).label('total_videos')
+        func.count(func.distinct(Video.video_id)).label('total_videos')
     ).join(Keyword, Keyword.video_id == Video.video_id).filter(
-        Keyword.keyword == keyword
+        Keyword.keyword == keyword,
+        Video.published_at >= recent_start
     ).one()
 
     unique_channels = stats.unique_channels or 0
@@ -160,7 +169,7 @@ def calculate_all_signals(db: Session, keyword: str, current_time: datetime) -> 
     """
     모든 핵심 지표를 종합하여 반환합니다.
     """
-    diversity_data = calculate_channel_diversity(db, keyword)
+    diversity_data = calculate_channel_diversity(db, keyword, current_time)
     engagement_data = calculate_engagement_velocity(db, keyword, current_time)
     
     return {
@@ -171,4 +180,41 @@ def calculate_all_signals(db: Session, keyword: str, current_time: datetime) -> 
         "velocity_views": engagement_data["velocity_views"],
         "engagement_score": engagement_data["engagement_score"],
         "alpha_used": engagement_data["alpha_used"]
+    }
+
+def calculate_sns_trend_score(db: Session, keyword: str, current_time: datetime, tf_idf_score: float = 0.0) -> dict:
+    """
+    유튜브 지표 기반 종합 트렌드 스코어를 계산합니다.
+    공식: (TF-IDF * Weight) + 영상 증가율 + 조회수 증가율 + (다양성 가중치 * 최우선) + 최근성(Recency)
+    """
+    signals = calculate_all_signals(db, keyword, current_time)
+    
+    growth = signals["growth"]
+    velocity_views = signals["velocity_views"]
+    channel_diversity = signals["channel_diversity"]
+    unique_channels = signals["unique_channels"]
+    
+    # 1. 다양성 가중치 (최우선 중요도)
+    # unique_channels가 1이면(한 채널 도배) 페널티, 여러 채널일수록 기하급수적 보상
+    diversity_weight = (unique_channels ** 1.5) * channel_diversity * 10
+    
+    # 2. 영상 증가율 점수 (최대 100점 캡)
+    growth_score = min(growth, 100)
+    
+    # 3. 조회수 증가율 점수 (가속도 반영)
+    velocity_score = min(velocity_views / 1000, 50)
+    
+    # 4. TF-IDF 반영
+    tf_idf_weight = tf_idf_score * 5
+    
+    # 종합 점수
+    total_score = tf_idf_weight + growth_score + velocity_score + diversity_weight
+    
+    return {
+        "total_score": round(total_score, 2),
+        "diversity_weight": round(diversity_weight, 2),
+        "growth_score": round(growth_score, 2),
+        "velocity_score": round(velocity_score, 2),
+        "tf_idf_weight": round(tf_idf_weight, 2),
+        "signals": signals
     }

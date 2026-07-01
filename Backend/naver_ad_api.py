@@ -15,7 +15,6 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from sns_sensing.database.db import SessionLocal
 from sns_sensing.models.models import ApiCache
 
-# Backend/key/.env 경로를 동적으로 지정하여 환경 변수 로드
 dotenv_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env")
 load_dotenv(dotenv_path=dotenv_path)
 

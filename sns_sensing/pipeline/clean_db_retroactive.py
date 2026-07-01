@@ -40,8 +40,9 @@ async def clean_database():
             logger.info(f" -> 청크 처리 중 ({i+1} ~ {min(i+chunk_size, len(unique_keywords))} / {len(unique_keywords)})")
             
             # LLM 필터링 수행
-            filtered_list = await classify_keywords_batch(chunk)
-            valid_food_keywords.update(filtered_list)
+            filtered_dict = await classify_keywords_batch(chunk)
+            valid_food_keywords.update(filtered_dict.keys())
+            valid_food_keywords.update(filtered_dict.values())
             
             # API Rate limit 방지를 위한 짧은 대기 (필요시)
             await asyncio.sleep(1)

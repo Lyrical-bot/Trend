@@ -1,16 +1,11 @@
-"""
-역할: 추출된 키워드를 Azure OpenAI GPT-4o-mini를 통해 2차 필터링합니다.
-목적: 식품/디저트 트렌드와 무관한 단어를 완벽히 걸러냅니다.
-"""
-
 import os
 import json
 from openai import AsyncAzureOpenAI
 from dotenv import load_dotenv
 
-load_dotenv()
+root_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+load_dotenv(os.path.join(root_dir, ".env"))
 
-# Azure OpenAI 클라이언트 초기화
 client = AsyncAzureOpenAI(
     azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT", ""),
     api_key=os.getenv("AZURE_OPENAI_API_KEY", ""),
@@ -19,89 +14,126 @@ client = AsyncAzureOpenAI(
 
 deployment_name = os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME", "gpt-4o-mini")
 
-SYSTEM_PROMPT = """
-당신은 '대한민국 F&B 트렌드 분석 봇'의 핵심 데이터 정제 AI입니다.
-목표: 유튜브 수집 단어 중 '차세대 유행할 간식/디저트/식재료/브랜드'를 조기 발굴.
+def build_system_prompt(recent_canonicals: list) -> str:
+    canonicals_str = ", ".join(recent_canonicals) if recent_canonicals else "없음"
+    
+    return f"""
+당신은 '대한민국 F&B 트렌드 분석 봇'의 데이터 추출 및 정규화 AI입니다.
+유망 후보 키워드와 해당 키워드가 등장한 [원본 문맥(context)] 목록이 주어지면, 각 항목에 대해 아래 JSON 배열 형식으로 구조화된 데이터를 반환하세요.
 
-[합격 기준]
-1. 음식 이름, 식재료, 디저트 이름 (예: 망고사고, 두바이초콜릿, 요아정, 엽떡)
-2. 맛의 특징을 나타내는 명사 (예: 맵단, 단짠, 꾸덕)
-3. 식품 브랜드/프랜차이즈 이름
-4. 음식과 결합된 복합 표현 (예: 마라탕 먹방, 신상 과자 리뷰)
-   ※ 단, 트렌드의 시발점이 될 수 있으므로 "먹방", "리뷰" 단독 단어도 제한적으로 합격 처리 (confidence를 낮게 부여)
+[내부 체크리스트 판단 로직 (매우 중요)]
+각 후보마다 아래 체크를 속으로(출력하지 않음) 수행한 후, 모두 통과한 경우에만 `valid: true`로 설정합니다.
+1. 이 표현이 실제 음식명/상품명인가? (소비자가 주문하거나 구매할 수 있는가?)
+2. 형태소 오류 가능성은 없는가? (예: 파편화된 단어, 의미 불명확)
+3. 수식어(극, 강, 존, 개, 대박, 미친 등)나 광고 문구를 제거하고도 객관적인 상품명이 남는가? (단, '카라멜', '불닭', '명란', '아보카도' 등은 단순 수식어가 아니라 핵심 재료이므로 제거하면 안 되며, 이를 포함한 전체가 유효한 상품명입니다.)
+4. 단순히 영상 제목의 일부이거나, 감탄사, 평가, 밈이 아닌가?
 
-[탈락 기준]
-1. 사람 이름/유튜버/연예인/아이돌 그룹 
-   (예: 에스파, 쯔양, 키비츠, 뉴진스, 침착맨)
-2. 음식과 무관한 일상/방송 용어 (예: 브이로그, 댓글, 출근길)
-3. 장소/지역명 단독 (예: 강남, 홍대)
-   단, 지역 특산물로 굳어진 경우는 허용 (예: 대구 막창, 제주 흑돼지)
-4. 감탄사/평가 (예: 최고, 존맛탱, 대박)
+위 조건 중 하나라도 만족하지 못하거나 '확신할 수 없는 경우'에는 무조건 `valid: false` 처리하세요.
 
-[애매한 경우 처리]
-단어 자체로 음식/인명 구분이 불명확하면 confidence를 낮게 설정하세요.
+[유효하지 않은(valid: false) 항목의 예시]
+- 상품명이 아님: "추천", "리뷰", "존맛탱"
+- 문법/형태소 오류: "강치즈", "쥬얼초코", "극강치즈", "비주얼치즈", "미친케이크"
+- 광고성/감정적 수식어: "대박쿠키", "존맛치즈", "레전드피자"
+※ `valid: false`인 경우, `canonical_name`을 포함한 다른 모든 속성은 `null`이어야 합니다.
 
-반드시 아래 JSON 형식으로만 반환 (마크다운 블록 금지):
+[유효한(valid: true) 항목의 예시]
+- "브라운치즈", "브라운 치즈 크로플", "두바이초콜릿", "말차크림도넛", "소금빵", "생크림카스텔라"
+- "카라멜 치즈 토스트", "불닭 치즈 떡볶이", "아보카도 명란 비빔밥" (핵심 재료가 결합된 구체적 메뉴명)
+
+[표기 통합 (Canonical Name) 규칙 및 엑스/오(O/X) 대조 예시]
+1. Canonicalization(표기 통합)은 **오직 같은 대상의 표기 차이(띄어쓰기, 외래어 표기, 오탈자)만 통일**하는 작업입니다.
+   - (O) "치즈토스트", "치즈 토스트", "치즈-토스트" -> `canonical_name: "치즈토스트"` (동일 대상 표기 차이)
+   - (O) "크루키", "크로키", "croookie" -> `canonical_name: "크루키"` (오탈자 및 외래어 통합)
+2. **절대 금지 사항**: 구체적인 수식어나 다른 재료가 결합된 별개의 메뉴를 포괄적인 상위 개념으로 뭉개거나 축소(Truncate)하지 마세요.
+   - (X) "카라멜 치즈 토스트" -> `canonical_name: "치즈토스트"` (금지! 카라멜이라는 핵심 재료가 삭제됨)
+   - (O) "카라멜 치즈 토스트" -> `canonical_name: "카라멜 치즈 토스트"` (핵심 수식어 보존)
+   - (X) "불닭 치즈 떡볶이" -> `canonical_name: "떡볶이"` (금지!)
+   - (O) "불닭 치즈 떡볶이" -> `canonical_name: "불닭 치즈 떡볶이"` (보존)
+
+3. 아래 [최근 확정된 대표 키워드 목록]이 제공됩니다. 
+   - **주의**: 이 목록의 단어들은 오직 **"표기만 다르고 의미가 완전히 동일한 항목"**일 때만 우선 사용하세요.
+   - (예: 목록에 "치즈토스트"가 있을 때, 후보가 "치즈 토스트"면 사용 O. 하지만 후보가 "카라멜 치즈 토스트"면 느슨한 유사성으로 억지로 편입시키지 말고 "카라멜 치즈 토스트"로 독립시키세요.)
+   
+[최근 확정된 대표 키워드 목록]
+{canonicals_str}
+
+반드시 아래 JSON 배열 형식으로만 반환하세요 (마크다운 블록 금지, 다른 설명 추가 금지):
 [
-  {"word": "망고 아이스크림", "valid": true, "confidence": 0.95},
-  {"word": "키위", "valid": true, "confidence": 0.6},
-  {"word": "에스파", "valid": false, "confidence": 0.98}
+  {{
+    "raw_keyword": "강치즈",
+    "valid": false,
+    "brand": null,
+    "item": null,
+    "category": null,
+    "action": null,
+    "canonical_name": null
+  }},
+  {{
+    "raw_keyword": "CU 두바이 쿠키",
+    "valid": true,
+    "brand": "CU",
+    "item": "두바이쫀득쿠키",
+    "category": "편의점 디저트",
+    "action": "리뷰",
+    "canonical_name": "두바이초콜릿"
+  }}
 ]
 """
 
-async def classify_keywords_batch(keywords: list) -> list:
-    """
-    주어진 키워드 리스트(보통 100개 단위)를 LLM에 전달하여 식품 관련 키워드만 필터링해 반환합니다.
-    """
-    if not keywords:
-        return []
+async def extract_keywords_info(candidates: list, recent_canonicals: list = None) -> dict:
+    if not candidates:
+        return {}
+        
+    if not recent_canonicals:
+        recent_canonicals = []
 
-    # API 설정이 누락된 경우 안전장치로 필터링 없이 그대로 반환
     if not os.getenv("AZURE_OPENAI_API_KEY") or os.getenv("AZURE_OPENAI_API_KEY") == "여기에_API_키를_입력하세요":
-        print("[WARNING] Azure OpenAI API Key is missing. Returning original keywords.")
-        return keywords
+        print("[WARNING] Azure OpenAI API Key is missing.")
+        return {}
 
-    try:
-        response = await client.chat.completions.create(
-            model=deployment_name,
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": f"단어 목록: {json.dumps(keywords, ensure_ascii=False)}"}
-            ],
-            temperature=0.0
-        )
+    results = {}
+    chunk_size = 50
+    
+    for i in range(0, len(candidates), chunk_size):
+        chunk = candidates[i:i + chunk_size]
+        system_prompt = build_system_prompt(recent_canonicals)
         
-        result_text = response.choices[0].message.content.strip()
-        
-        # JSON 파싱 (마크다운 코드블록 제거)
-        if result_text.startswith("```json"):
-            result_text = result_text[7:]
-        if result_text.startswith("```"):
-            result_text = result_text[3:]
-        if result_text.endswith("```"):
-            result_text = result_text[:-3]
+        try:
+            response = await client.chat.completions.create(
+                model=deployment_name,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": f"분석 대상: {json.dumps(chunk, ensure_ascii=False)}"}
+                ],
+                temperature=0.0
+            )
             
-        result_text = result_text.strip()
-        
-        parsed_data = json.loads(result_text)
-        
-        # 새로 바뀐 JSON Object 형식 파싱
-        if isinstance(parsed_data, list):
-            valid_keywords = []
-            for item in parsed_data:
-                if isinstance(item, dict):
-                    # valid가 true이거나, 없더라도 에러 안 나게 방어
-                    if item.get("valid") is True:
-                        valid_keywords.append(item.get("word"))
-                else:
-                    # 혹시 문자열 리스트로 왔을 경우 방어코드
-                    valid_keywords.append(item)
-            return [k for k in valid_keywords if k]
-        else:
-            print(f"[Error] LLM returned unexpected format (not list): {parsed_data}")
-            return keywords
+            result_text = response.choices[0].message.content.strip()
             
-    except Exception as e:
-        print(f"[Error] LLM API 호출 에러: {e}")
-        # 실패 시 안전장치: 원본 그대로 반환(데이터 유실 방지)
-        return keywords
+            if result_text.startswith("```json"):
+                result_text = result_text[7:]
+            if result_text.startswith("```"):
+                result_text = result_text[3:]
+            if result_text.endswith("```"):
+                result_text = result_text[:-3]
+                
+            result_text = result_text.strip()
+            parsed_data = json.loads(result_text)
+            
+            if isinstance(parsed_data, list):
+                for item in parsed_data:
+                    if isinstance(item, dict) and item.get("valid") is True:
+                        raw_kw = item.get("raw_keyword")
+                        if raw_kw:
+                            results[raw_kw] = {
+                                "brand": item.get("brand"),
+                                "item": item.get("item"),
+                                "category": item.get("category"),
+                                "action": item.get("action"),
+                                "canonical_name": item.get("canonical_name") or raw_kw
+                            }
+        except Exception as e:
+            print(f"[Error] LLM API 호출 에러 (chunk {i}): {e}")
+            continue
+            
+    return results

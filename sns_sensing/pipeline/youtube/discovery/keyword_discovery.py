@@ -18,7 +18,14 @@ STOPWORDS = {
     "감성", "개봉", "느낌", "분위기", "언박싱", "하울",
     "웨이팅", "맛집", "과자", "우유", "디저트", "신상과자", "조합", "간식", "크림", "출시", "난리", "서울", "식감",
     "사람", "생각", "시간", "정도", "이거", "그거", "저거", "우리", "여러분", "친구",
-    "요즘", "최근", "마지막", "처음", "진행", "시작", "준비", "도전", "성공", "실패"
+    "요즘", "최근", "마지막", "처음", "진행", "시작", "준비", "도전", "성공", "실패",
+    "극강", "비쥬얼", "비주얼", "역대급", "미친", "존맛"
+}
+
+# 콘텐츠 포맷 태그 (음식 트렌드가 아닌 영상 형식/포맷을 나타내는 단어)
+FORMAT_TAGS = {
+    "신상리뷰", "신상 리뷰", "언박싱", "먹방", "브이로그", "vlog",
+    "리뷰", "후기", "추천", "꿀조합", "레시피", "만들기",
 }
 
 # 2. 부분 일치 불가: 이 단어가 포함되어 있으면 무조건 버림 (엔터/인방/마케팅 노이즈 제거)
@@ -50,8 +57,8 @@ def is_valid_keyword(word: str) -> bool:
     if word.isdigit():
         return False
         
-    # 3. 절대 불가 불용어 사전 매칭
-    if word in STOPWORDS:
+    # 3. 절대 불가 불용어 또는 포맷 태그 사전 매칭
+    if word in STOPWORDS or word in FORMAT_TAGS:
         return False
         
     # 4. 부분 일치 노이즈 사전 매칭
@@ -71,36 +78,64 @@ def is_valid_keyword(word: str) -> bool:
 
 def extract_keywords(text: str) -> list:
     """
-    텍스트를 입력받아 NNG(일반명사), NNP(고유명사) 추출 및 연속된 명사를 묶은 복합명사(Bi-gram)를 반환합니다.
-    1차 룰베이스 필터링을 거칩니다.
+    텍스트를 입력받아 NNG(일반명사), NNP(고유명사), UN(미등록어), XR(어근), SL(알파벳/외국어), MAG(일반부사) 태그를 추출합니다.
+    또한 이들이 연속으로 나타나는 구간을 덩어리(Chunk)로 묶어 길이 2~4의 N-gram을 모두 생성합니다.
+    추가로, 원본 띄어쓰기 단위의 단어(Raw Word)도 후보군에 포함시켜 형태소 분석기가 과도하게 쪼개는 신조어(예: 두바이쫀득쿠키)를 보완합니다.
     """
     text = clean_text(text)
     if not text.strip():
         return []
         
+    # 1. 띄어쓰기 단위 원본 단어(Raw words) 추출 (형태소 분석기가 과하게 쪼개는 것을 방어)
+    raw_words = []
+    for word in text.split():
+        if 2 <= len(word) <= 15:
+            if is_valid_keyword(word):
+                raw_words.append(word)
+
     # 형태소 분석
     result = kiwi.tokenize(text)
     tokens_list = list(result)
     
+    valid_tags = {'NNG', 'NNP', 'UN', 'XR', 'SL', 'MAG'}
+    
+    # 2. 단일 태그 추출
     single_nouns = []
-    # 1. 단일 명사 추출
     for token in tokens_list:
-        if token.tag in ['NNG', 'NNP']:
+        if token.tag in valid_tags:
             if is_valid_keyword(token.form):
                 single_nouns.append(token.form)
                 
-    # 2. 복합 명사(Bi-gram) 추출 ("망고" + "아이스크림" -> "망고 아이스크림")
+    # 3. N-gram 청킹(Chunking) 추출
     compound_nouns = []
-    for i in range(len(tokens_list) - 1):
-        curr = tokens_list[i]
-        next_ = tokens_list[i + 1]
-        
-        if curr.tag in ['NNG', 'NNP'] and next_.tag in ['NNG', 'NNP']:
-            compound = curr.form + " " + next_.form
-            # 복합명사도 룰베이스 필터를 통과해야 함 (부분일치 노이즈 검사 등)
-            if is_valid_keyword(compound):
-                compound_nouns.append(compound)
+    current_chunk = []
+    
+    # 청크 단위로 분리 (유효 태그가 연속되는 구간을 찾음)
+    for token in tokens_list:
+        if token.tag in valid_tags:
+            current_chunk.append(token.form)
+        else:
+            if len(current_chunk) >= 2:
+                # 덩어리 안에서 길이 2부터 4까지의 모든 부분집합(N-gram) 생성
+                chunk_len = len(current_chunk)
+                for n in range(2, min(5, chunk_len + 1)):
+                    for start in range(chunk_len - n + 1):
+                        ngram_words = current_chunk[start:start + n]
+                        compound = " ".join(ngram_words)
+                        if is_valid_keyword(compound):
+                            compound_nouns.append(compound)
+            current_chunk = []
+            
+    # 마지막으로 남은 청크 처리
+    if len(current_chunk) >= 2:
+        chunk_len = len(current_chunk)
+        for n in range(2, min(5, chunk_len + 1)):
+            for start in range(chunk_len - n + 1):
+                ngram_words = current_chunk[start:start + n]
+                compound = " ".join(ngram_words)
+                if is_valid_keyword(compound):
+                    compound_nouns.append(compound)
                 
-    # 중복 제거 후 반환
-    all_terms = list(set(single_nouns + compound_nouns))
+    # 중복 제거 후 반환 (원시 단어 + 형태소 단어 + N-gram)
+    all_terms = list(set(single_nouns + compound_nouns + raw_words))
     return all_terms

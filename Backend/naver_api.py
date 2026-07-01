@@ -12,7 +12,6 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from sns_sensing.database.db import SessionLocal
 from sns_sensing.models.models import ApiCache
 
-# Backend/key/.env 경로를 동적으로 지정하여 환경 변수 로드
 dotenv_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env")
 load_dotenv(dotenv_path=dotenv_path)
 
@@ -195,18 +194,32 @@ async def fetch_datalab_top_keywords(
         try:
             for p in range(1, pages + 1):
                 data = f"cid={cid}&timeUnit=date&startDate={start_date_str}&endDate={end_date_str}&age=&gender=&device=&page={p}&count=20"
-                response = await client.post(url, headers=headers, content=data, timeout=10.0)
-                if response.status_code == 200:
-                    res_data = response.json()
-                    ranks = res_data.get("ranks", [])
-                    page_keywords = [item["keyword"] for item in ranks]
-                    all_keywords.extend(page_keywords)
-                    if len(all_keywords) >= count:
+                
+                # 재시도 로직
+                max_retries = 3
+                for retry in range(max_retries):
+                    response = await client.post(url, headers=headers, content=data, timeout=10.0)
+                    if response.status_code == 200:
+                        res_data = response.json()
+                        ranks = res_data.get("ranks", [])
+                        page_keywords = [item["keyword"] for item in ranks]
+                        all_keywords.extend(page_keywords)
                         break
-                else:
-                    print(f"[Warning] 인기검색어 조회 실패 (상태 코드 {response.status_code}) - page {p}: {response.text[:100]}")
+                    elif response.status_code == 429:
+                        print(f"[Warning] 429 Rate Limit 도달 (page {p}). 2초 대기 후 재시도 ({retry+1}/{max_retries})...")
+                        await asyncio.sleep(2.0)
+                        if retry == max_retries - 1:
+                            print(f"[Error] 최대 재시도 횟수 초과. 스크래핑 중단.")
+                    else:
+                        print(f"[Warning] 인기검색어 조회 실패 (상태 코드 {response.status_code}) - page {p}: {response.text[:100]}")
+                        break
+                
+                if response.status_code != 200:
                     break
-                await asyncio.sleep(0.1) # Rate limit 방어
+                    
+                if len(all_keywords) >= count:
+                    break
+                await asyncio.sleep(0.5) # Rate limit 방어 (0.3 -> 0.5)
             
             # --- DB Caching Save Start ---
             result_keywords = all_keywords[:count]
