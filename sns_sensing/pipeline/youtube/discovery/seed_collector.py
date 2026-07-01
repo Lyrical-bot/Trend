@@ -22,7 +22,7 @@ if not API_KEY:
     print("[Warning] .env 파일에 YOUTUBE_API_KEY가 설정되지 않아 YouTube 영상 수집 기능이 비활성화됩니다.")
     youtube = None
 else:
-    youtube = build('youtube', 'v3', developerKey=API_KEY)
+    youtube = build('youtube', 'v3', developerKey=API_KEY, cache_discovery=False)
 
 # 식품/디저트 전용 시드 키워드 풀
 FOOD_SEED_KEYWORDS = [
