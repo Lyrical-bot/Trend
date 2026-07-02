@@ -352,10 +352,12 @@ class TrendChartHelper {
                 
                 // 검색어 트렌드 시리즈 개수 파악
                 const primarySeriesCount = series.filter(s => s.name !== "평균 기온 (°C)" && s.name !== "일강수량 (mm)").length;
+                const firstSeriesName = series[0] ? series[0].name : undefined;
                 
                 for (let i = 0; i < primarySeriesCount; i++) {
                     yaxisConfig.push({
                         show: i === 0,
+                        seriesName: firstSeriesName, // 모든 검색량 시리즈 Y축이 첫 번째 눈금 스케일을 공유하게 설정하여 빨간 점 위치 오류 해결
                         min: 0,
                         tickAmount: 5,
                         labels: {
