@@ -220,10 +220,11 @@ async def predict_trend(payload: PredictRequest):
                 _apply_scaling(historical, multiplier)
                 _apply_scaling(forecasted, multiplier)
                 
-                # summary 수치 업데이트
-                summary["lastHistoricalValue"] = round(summary["lastHistoricalValue"] * multiplier, 0)
-                summary["lastForecastValue"] = round(summary["lastForecastValue"] * multiplier, 0)
-                summary["maxRatio"] = round(summary["maxRatio"] * multiplier, 0)
+                # 에러 리포팅 상태가 아닐 때만 요약 지표 스케일링을 수행하여 KeyError 방지
+                if "error" not in summary:
+                    summary["lastHistoricalValue"] = round(summary["lastHistoricalValue"] * multiplier, 0)
+                    summary["lastForecastValue"] = round(summary["lastForecastValue"] * multiplier, 0)
+                    summary["maxRatio"] = round(summary["maxRatio"] * multiplier, 0)
 
                 # signal 내부의 volume 값도 스케일링
                 for sig in signals:
@@ -390,9 +391,11 @@ async def predict_single_keyword(payload: PredictKeywordRequest):
             _apply_scaling(historical, multiplier)
             _apply_scaling(forecasted, multiplier)
             
-            summary["lastHistoricalValue"] = round(summary["lastHistoricalValue"] * multiplier, 0)
-            summary["lastForecastValue"] = round(summary["lastForecastValue"] * multiplier, 0)
-            summary["maxRatio"] = round(summary["maxRatio"] * multiplier, 0)
+            # 에러 리포팅 상태가 아닐 때만 요약 지표 스케일링을 수행하여 KeyError 방지
+            if "error" not in summary:
+                summary["lastHistoricalValue"] = round(summary["lastHistoricalValue"] * multiplier, 0)
+                summary["lastForecastValue"] = round(summary["lastForecastValue"] * multiplier, 0)
+                summary["maxRatio"] = round(summary["maxRatio"] * multiplier, 0)
 
             # signal 내부의 volume 값도 스케일링
             for sig in signals:
