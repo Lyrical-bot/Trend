@@ -308,7 +308,7 @@ class TrendChartHelper {
           },
         },
         zoom: {
-          enabled: true,
+          enabled: false,
           autoScaleYaxis: true,
         },
         dropShadow: {
