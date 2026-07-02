@@ -38,9 +38,16 @@ NOISE_SUBSTRINGS = [
 ]
 
 def clean_text(text: str) -> str:
-    """텍스트에서 특수문자나 이모지를 제거합니다."""
+    """텍스트에서 특수문자나 이모지를 제거하고, 노이즈 단어를 원천적으로 도려냅니다."""
     if not text:
         return ""
+        
+    # 노이즈 단어(예: 키비츠, 아이돌 등)를 원문에서 아예 삭제하여
+    # 형태소 분석기가 '걸크루 키비츠' -> '걸', '크루', '키', '비츠' 로 쪼개어
+    # '크루 키' 같은 엉뚱한 N-gram을 만들지 못하도록 방어합니다.
+    for noise in NOISE_SUBSTRINGS:
+        text = text.replace(noise, " ")
+        
     # 간단한 정규식으로 알파벳, 한글, 숫자, 공백만 남김
     text = re.sub(r'[^a-zA-Z0-9가-힣\s]', ' ', text)
     return text

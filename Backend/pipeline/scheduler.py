@@ -29,8 +29,8 @@ async def run_food_collection_job():
         with open(LOCK_FILE, "w", encoding="utf-8") as f:
             f.write("running")
             
-        # 2. 식품(50000006) 카테고리의 Top 500 키워드 가져오기
-        keywords = await fetch_datalab_top_keywords(cid="50000006", count=500)
+        # 2. 식품(50000006) 카테고리의 Top 500 키워드 가져오기 (전날 기준)
+        keywords = await fetch_datalab_top_keywords(cid="50000006", count=500, days_ago=0)
         
         if not keywords:
             print("키워드 수집에 실패했습니다. 다음 주기에 다시 시도합니다.")
@@ -71,8 +71,8 @@ async def run_food_collection_job():
         youtube_seeds = {}
         for cat_name, cid in TARGET_CIDS.items():
             print(f"  -> [{cat_name}] 카테고리 키워드 수집 중...")
-            # 초기 트렌드(초동)를 잡기 위해 30일이 아닌 최근 7일(주간) 기준으로 좁힘
-            cat_keywords = await fetch_datalab_top_keywords(cid=cid, count=500, days_ago=7)
+            # 전날 기준으로 매일 즉각적인 트렌드 변화를 반영하기 위해 days_ago=0으로 설정
+            cat_keywords = await fetch_datalab_top_keywords(cid=cid, count=500, days_ago=0)
             if not cat_keywords:
                 continue
                 
@@ -145,10 +145,11 @@ def init_scheduler():
     pipeline_needs_immediate_run = True
     try:
         from sns_sensing.database.db import SessionLocal
-        from sns_sensing.models.models import Video
+        from sns_sensing.models.models import Video, TrendingKeyword
         db = SessionLocal()
-        exists = db.query(Video).first()
-        if exists:
+        video_exists = db.query(Video).first()
+        trend_exists = db.query(TrendingKeyword).first()
+        if video_exists and trend_exists:
             pipeline_needs_immediate_run = False
             print("DB에 기존 유튜브 데이터가 존재하므로 초기 즉시 가동을 생략합니다. (3시간 주기 스케줄러로만 작동)")
         db.close()

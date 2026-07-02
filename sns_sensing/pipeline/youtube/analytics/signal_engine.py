@@ -218,3 +218,108 @@ def calculate_sns_trend_score(db: Session, keyword: str, current_time: datetime,
         "tf_idf_weight": round(tf_idf_weight, 2),
         "signals": signals
     }
+
+def calculate_spike_candidates(db: Session, current_time: datetime, min_mentions: int = 10, max_candidates: int = 30) -> list:
+    """
+    1차 스파이크 필터(배치 쿼리):
+    최근 3일간의 언급량이 N건 이상이고, 
+    이전 14일 대비 일평균 언급량이 200% 이상 증가했거나 (혹은 이전 14일 언급량이 0인 콜드스타트)
+    조건을 만족하는 키워드를 추출합니다. 예산 초과 방지를 위해 상위 K개를 리턴합니다.
+    """
+    from sqlalchemy import case
+    
+    recent_start = current_time - timedelta(days=3)
+    past_start = recent_start - timedelta(days=14)
+    
+    # KeywordStat을 한 번에 스캔하여 과거와 최근 합계를 집계
+    stats = db.query(
+        KeywordStat.keyword,
+        func.sum(case((KeywordStat.hour >= recent_start, KeywordStat.mention_count), else_=0)).label('recent_sum'),
+        func.sum(case((KeywordStat.hour < recent_start, KeywordStat.mention_count), else_=0)).label('past_sum')
+    ).filter(
+        KeywordStat.hour >= past_start,
+        KeywordStat.hour <= current_time
+    ).group_by(KeywordStat.keyword).all()
+    
+    candidates = []
+    for stat in stats:
+        recent_sum = stat.recent_sum or 0
+        past_sum = stat.past_sum or 0
+        
+        # 1. 절대량 하한선 (최근 3일간 합계)
+        if recent_sum < min_mentions:
+            continue
+            
+        recent_daily_avg = recent_sum / 3.0
+        past_daily_avg = past_sum / 14.0
+        
+        spike_ratio = 0.0
+        is_spike = False
+        
+        # 2. 콜드스타트 & 증가율 필터
+        if past_sum == 0:
+            is_spike = True
+            spike_ratio = 999.0 # 매우 큰 값
+        else:
+            spike_ratio = recent_daily_avg / past_daily_avg
+            if spike_ratio >= 2.0: # 200% 이상
+                is_spike = True
+                
+        if is_spike:
+            score = recent_sum * spike_ratio # Cut-off 랭킹용
+            candidates.append({
+                "keyword": stat.keyword,
+                "recent_sum": recent_sum,
+                "past_sum": past_sum,
+                "spike_ratio": spike_ratio,
+                "score": score
+            })
+            
+    # Score 내림차순 정렬 후 최대 K개 반환 (Cut-off)
+    candidates.sort(key=lambda x: x['score'], reverse=True)
+    return candidates[:max_candidates]
+
+def update_expired_trends(db: Session, current_time: datetime, min_mentions: int = 5):
+    """
+    기존에 TREND 상태인 키워드들 중, 
+    최근 3일간의 언급량 합계가 절대량 하한선(min_mentions) 미만으로 떨어진 키워드를 EXPIRED로 상태 변경합니다.
+    """
+    from sns_sensing.models.models import TrendingKeyword
+    from sqlalchemy import case
+    
+    recent_start = current_time - timedelta(days=3)
+    
+    # TREND 상태인 키워드 조회
+    trend_keywords = db.query(TrendingKeyword).filter(TrendingKeyword.status == "TREND").all()
+    if not trend_keywords:
+        return
+        
+    trend_kws = [tk.keyword for tk in trend_keywords]
+    
+    # 해당 키워드들의 최근 3일 언급량 집계
+    stats = db.query(
+        KeywordStat.keyword,
+        func.sum(KeywordStat.mention_count).label('recent_sum')
+    ).filter(
+        KeywordStat.keyword.in_(trend_kws),
+        KeywordStat.hour >= recent_start,
+        KeywordStat.hour <= current_time
+    ).group_by(KeywordStat.keyword).all()
+    
+    stat_map = {row.keyword: (row.recent_sum or 0) for row in stats}
+    
+    expired_count = 0
+    for tk in trend_keywords:
+        recent_sum = stat_map.get(tk.keyword, 0)
+        if recent_sum < min_mentions:
+            tk.status = "EXPIRED"
+            tk.updated_at = current_time
+            expired_count += 1
+            
+    if expired_count > 0:
+        try:
+            db.commit()
+        except:
+            db.rollback()
+
+

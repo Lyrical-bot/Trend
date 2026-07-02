@@ -1190,8 +1190,22 @@ window.fetchDiscoveredKeywords = async function() {
             chip.style.cssText = `background: ${bgColor}; border: 1px solid ${borderColor}; color: ${textColor}; border-radius: 20px; padding: 4px 12px; font-size: 0.85rem; cursor: pointer; transition: all 0.2s;`;
             chip.innerHTML = `#${k.keyword} <span style="opacity: 0.8; font-size: 0.75rem; margin-left: 4px;">${k.score}점</span>`;
             
-            // 호버 시 자세한 스펙 툴팁 제공
-            chip.title = `[${k.grade}]\n독립 채널: ${k.channel_diversity}개\n업로드: ${k.video_count}개\n평균 조회수: ${k.avg_views.toLocaleString()}회\n평균 구독자: ${k.avg_subs.toLocaleString()}명`;
+            // 호버 시 자세한 점수 산출 배경을 직관적으로 설명하는 툴팁 제공
+            let breakdown = k.breakdown || {};
+            let diversityMsg = k.channel_diversity >= 10 
+                ? `✨ ${k.channel_diversity}개의 서로 다른 채널에서 골고루 유행 중입니다! (채널 페널티 없음)`
+                : `⚠️ 특정 ${k.channel_diversity}개 채널에 편중되어 있어 점수 페널티가 적용되었습니다.`;
+
+            chip.title = `[${k.grade}]
+종합 트렌드 점수: ${k.score}점 (100점 만점)
+
+📊 점수 산출 배경
+• 💥 폭발력 (${breakdown.avg_views_score || 0}점) : 채널 규모를 뛰어넘는 압도적인 평균 조회수
+• 🌊 블루오션 (${breakdown.blue_ocean_score || 0}점) : 구독자 대비 조회수가 폭발하는 가성비
+• 🔥 바이럴 (${breakdown.upload_density_score || 0}점) : 짧은 기간 내 집중적인 다중 업로드 발생
+• 👥 대중성 (${breakdown.avg_subs_score || 0}점) : 중소형 채널 위주의 자발적 참여 확산
+
+${diversityMsg}`;
             
             // 호버 효과
             chip.onmouseover = () => { chip.style.background = borderColor; };

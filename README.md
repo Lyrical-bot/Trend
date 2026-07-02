@@ -62,7 +62,9 @@ new/                                    # 🚀 최상위 프로젝트 폴더
 │   ├── 📂 models/                      # 데이터 모델 정의 폴더
 │   │   └── models.py                   # DB 테이블(Video, Keyword 등)의 스키마 정의
 │   ├── 📂 tests/                       # 유닛 테스트 폴더
-│   │   └── test_youtube_growth.py      # 베이지안 스무딩 및 급증도 로직 검증용 테스트 코드
+│   │   ├── test_youtube_growth.py      # 베이지안 스무딩 및 급증도 로직 검증용 테스트 코드
+│   │   ├── test_spike_filter.py        # 정량적 스파이크(Spike) 필터 및 만료(TTL) 로직 검증용 테스트 코드
+│   │   └── test_gpt_extractor.py       # GPT-Native 추출기 방어 체계(오탐 방지) 회귀 테스트 코드
 │   └── 📂 pipeline/                    # 유튜브 수집 및 정제 파이프라인
 │       ├── runner.py                   # [youtube, keyword_filter 연동] 유튜브 수집 통제 오케스트레이터
 │       ├── candidate_selector.py       # 수많은 키워드 중 PMI(연관성)가 높은 가치 있는 후보만 골라내는 로직
@@ -77,7 +79,8 @@ new/                                    # 🚀 최상위 프로젝트 폴더
 │       │   └── 📂 analytics/           # 수식 계산 모듈
 │       │       └── signal_engine.py    # 다양성 산출 및 베이지안 스무딩 기반 급증도 계산 엔진
 │       └── 📂 openai_keyword_filter/   # GPT 기반 노이즈 필터링 모듈
-│           └── keyword_filter.py       # GPT-4o-mini를 호출해 쓸모없는 단어를 버리고 핵심 명사만 정제
+│           ├── keyword_filter.py       # (레거시) 초기 GPT 노이즈 필터 모듈
+│           └── gpt_extractor.py        # [신규] Structured Outputs 및 is_compound 기반의 GPT-Native 핵심 추출기
 │
 ├── 📂 Frontend/                        # 💻 사용자 대시보드 UI 화면
 │   ├── 📂 css/                         # 스타일시트 폴더

@@ -109,43 +109,18 @@ def specify_candidates(db: Session, raw_candidates: List[str], pmi_threshold: fl
 
 def select_candidates(db: Session, current_candidates: List[str], current_time: datetime) -> List[str]:
     """
-    절대 순위(현재 TF-IDF 기반) 후보들과 과거 데이터 기반 증가율 상위 후보들을 합쳐서 반환합니다.
-    (MVP 이원화 컷오프 정책 구현)
+    최신 아키텍처: 정량적 급증 지표(Spike Filter) 기반 1차 후보군 선별.
+    최근 3일 언급량이 N건 이상이고, 이전 14일 대비 200% 증가했거나(또는 신규 발생한)
+    유의미한 스파이크를 보인 키워드만 후보로 올립니다.
     """
-    final_candidates = set(current_candidates)
+    from sns_sensing.pipeline.youtube.analytics.signal_engine import calculate_spike_candidates
     
-    recent_start = current_time - timedelta(days=3)
-    past_start = current_time - timedelta(days=6)
+    # 1. 스파이크 필터를 거친 후보 추출 (최대 30개로 예산 컷오프)
+    spike_candidates_dicts = calculate_spike_candidates(db, current_time, min_mentions=5, max_candidates=30)
+    final_candidates = set([c['keyword'] for c in spike_candidates_dicts])
     
-    # 최근 3일 카운트
-    recent_counts = db.query(KeywordStat.keyword, func.sum(KeywordStat.mention_count).label('count')).filter(
-        KeywordStat.hour >= recent_start,
-        KeywordStat.hour <= current_time
-    ).group_by(KeywordStat.keyword).all()
-    
-    # 과거 3일 카운트
-    past_counts = db.query(KeywordStat.keyword, func.sum(KeywordStat.mention_count).label('count')).filter(
-        KeywordStat.hour >= past_start,
-        KeywordStat.hour < recent_start
-    ).group_by(KeywordStat.keyword).all()
-    
-    past_map = {row[0]: row[1] for row in past_counts}
-    
-    growth_rates = []
-    for kw, recent_count in recent_counts:
-        past_count = past_map.get(kw, 0)
-        if past_count > 0:
-            growth = (recent_count - past_count) / past_count
-        else:
-            growth = 999.0 if recent_count >= 3 else 0 
-            
-        if growth > 0:
-            growth_rates.append((kw, growth))
-            
-    growth_rates.sort(key=lambda x: x[1], reverse=True)
-    top_growth = [kw for kw, _ in growth_rates[:30]]
-    
-    final_candidates.update(top_growth)
+    # 기존 TF-IDF 후보 중에서도 아주 극도로 빈도가 높은 핵심어만 일부 유지할지 선택할 수 있으나,
+    # 여기서는 스파이크(트렌드성) 후보에 집중합니다.
     
     # 3. NPMI 기반 카테고리어 구체화 (광범위한 카테고리를 구체적 수식어 조합으로 변경)
     specified_list = specify_candidates(db, list(final_candidates))
