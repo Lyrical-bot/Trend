@@ -84,6 +84,8 @@ def build_signal_feature_rows(
     historical_data: List[Dict[str, Any]],
     config: EarlySignalConfig = DEFAULT_CONFIG,
 ) -> List[Dict[str, Any]]:
+    if not historical_data or len(historical_data) < config.min_history_days:
+        return []
     df = _prepare_history(historical_data)
     rows: List[Dict[str, Any]] = []
 
@@ -107,6 +109,8 @@ def build_breakout_training_rows(
     historical_data: List[Dict[str, Any]],
     config: EarlySignalConfig = DEFAULT_CONFIG,
 ) -> List[Dict[str, Any]]:
+    if not historical_data or len(historical_data) < config.min_history_days:
+        return []
     df = _prepare_history(historical_data)
     feature_rows = build_signal_feature_rows(historical_data, config)
     rows: List[Dict[str, Any]] = []
@@ -136,6 +140,8 @@ def detect_early_signals(
     historical_data: List[Dict[str, Any]],
     config: EarlySignalConfig = DEFAULT_CONFIG,
 ) -> List[Dict[str, Any]]:
+    if not historical_data or len(historical_data) < config.min_history_days:
+        return []
     feature_rows = build_signal_feature_rows(historical_data, config)
     signals: List[Dict[str, Any]] = []
     last_signal_date: pd.Timestamp | None = None

@@ -45,10 +45,16 @@ async def fetch_search_ad_volume(keywords: List[str]) -> Dict[str, float]:
     chunk_size = 5
     for i in range(0, len(keywords), chunk_size):
         chunk = keywords[i:i+chunk_size]
-        hint_keywords = ",".join(chunk)
+        
+        # 네이버 광고 API는 키워드 내의 공백(띄어쓰기)을 허용하지 않으므로 임시로 제거하여 조회합니다.
+        query_chunk = [k.replace(" ", "") for k in chunk]
+        mapping = {k.replace(" ", ""): k for k in chunk}
+        hint_keywords = ",".join(query_chunk)
         
         # --- DB Caching Logic Start ---
-        request_hash_str = json.dumps({"hintKeywords": hint_keywords}, sort_keys=True)
+        # 캐시 매핑 키는 사용자가 요청한 원본 텍스트(공백 포함) 기준으로 유지합니다.
+        original_hint_keywords = ",".join(chunk)
+        request_hash_str = json.dumps({"hintKeywords": original_hint_keywords}, sort_keys=True)
         request_hash = hashlib.sha256(request_hash_str.encode('utf-8')).hexdigest()
         date_key = datetime.now().strftime("%Y-%m-%d")
         
@@ -66,7 +72,7 @@ async def fetch_search_ad_volume(keywords: List[str]) -> Dict[str, float]:
             db.close()
             
         if cached_result is not None:
-            print(f"[Info] 캐시된 네이버 검색광고 API 데이터를 불러옵니다. ({hint_keywords})")
+            print(f"[Info] 캐시된 네이버 검색광고 API 데이터를 불러옵니다. ({original_hint_keywords})")
             for kw, vol in cached_result.items():
                 if kw in results:
                     results[kw] = vol
@@ -111,8 +117,10 @@ async def fetch_search_ad_volume(keywords: List[str]) -> Dict[str, float]:
                         if isinstance(mo_cnt, str) and '<' in mo_cnt:
                             mo_cnt = 5
 
-                        if kw in results:
-                            results[kw] = float(pc_cnt) + float(mo_cnt)
+                        # 공백이 제거된 응답 키워드를 매핑을 통해 원본 공백 포함 키워드로 환원
+                        original_kw = mapping.get(kw)
+                        if original_kw and original_kw in results:
+                            results[original_kw] = float(pc_cnt) + float(mo_cnt)
                             
                     # --- DB Caching Save Start ---
                     db = SessionLocal()
@@ -144,8 +152,10 @@ async def fetch_search_ad_volume(keywords: List[str]) -> Dict[str, float]:
                             mo_cnt = item.get('monthlyMobileQcCnt', 0)
                             if isinstance(pc_cnt, str) and '<' in pc_cnt: pc_cnt = 5
                             if isinstance(mo_cnt, str) and '<' in mo_cnt: mo_cnt = 5
-                            if kw in results:
-                                results[kw] = float(pc_cnt) + float(mo_cnt)
+                            
+                            original_kw = mapping.get(kw)
+                            if original_kw and original_kw in results:
+                                results[original_kw] = float(pc_cnt) + float(mo_cnt)
                                 
                         # --- DB Caching Save Start ---
                         db = SessionLocal()
