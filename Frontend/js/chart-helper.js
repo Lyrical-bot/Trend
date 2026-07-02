@@ -58,11 +58,11 @@ class TrendChartHelper {
       this.absoluteMin = absoluteMinTime;
       this.absoluteMax = maxTime;
 
-      // 초기 노출 뷰포트는 최근 1년(365일)치만 보여주고 나머지는 스크롤/휠로 이동
-      const oneYearMs = 365 * 24 * 60 * 60 * 1000;
+      // 초기 노출 뷰포트는 최근 3달(90일)치만 보여주고 나머지는 스크롤/휠로 이동
+      const threeMonthsMs = 90 * 24 * 60 * 60 * 1000;
       this.currentMin = Math.max(
         this.absoluteMin,
-        this.absoluteMax - oneYearMs,
+        this.absoluteMax - threeMonthsMs,
       );
       this.currentMax = this.absoluteMax;
 
@@ -589,8 +589,8 @@ class TrendChartHelper {
     const currentSpan = this.currentMax - this.currentMin;
     let newSpan = currentSpan;
 
-    // 확대의 한계치: 딱 예측 값이 보이는 30일(30 * 24 * 3600 * 1000 ms)로 한정
-    const minSpan = 30 * 24 * 60 * 60 * 1000;
+    // 확대의 한계치: 두 달(60일)로 한정
+    const minSpan = 60 * 24 * 60 * 60 * 1000;
 
     if (direction === "in") {
       // 확대: 보여주는 구간(Span)을 절반으로 단축하되 30일 이하로 가지 못하게 제한
@@ -700,16 +700,18 @@ class TrendChartHelper {
         )
           return;
 
-        // 휠 동작 시 수직 방향 휠 줌이나 수직 브라우저 스크롤을 차단하고 가로 스크롤로 전담
-        e.preventDefault();
+        // 가로 휠 스크롤(deltaX) 신호가 존재하는 경우에만 가로 이동을 수행합니다.
+        if (Math.abs(e.deltaX) > 0) {
+          e.preventDefault(); // 기본 스크롤 동작 차단
 
-        const totalSpan = this.absoluteMax - this.absoluteMin;
-        const visibleSpan = this.currentMax - this.currentMin;
+          const totalSpan = this.absoluteMax - this.absoluteMin;
+          const visibleSpan = this.currentMax - this.currentMin;
 
-        // 스크롤이 가능한 여지(화면에 보이는 영역이 전체 영역보다 작을 때)가 있을 때 가로 이동 수행
-        if (visibleSpan < totalSpan - 24 * 60 * 60 * 1000) {
-          const direction = e.deltaY > 0 ? "right" : "left";
-          this.scrollX(direction);
+          // 스크롤이 가능한 여지가 있을 때 가로 이동 수행
+          if (visibleSpan < totalSpan - 24 * 60 * 60 * 1000) {
+            const direction = e.deltaX > 0 ? "right" : "left";
+            this.scrollX(direction);
+          }
         }
       },
       { passive: false },

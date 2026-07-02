@@ -112,6 +112,32 @@ document.addEventListener('DOMContentLoaded', () => {
         analyzeBtn.addEventListener('click', handleAnalyze);
     }
 
+    // 연령대 필터 "전체" 체크박스 특수 토글 로직
+    const ageAllCheckbox = document.getElementById('age-all');
+    const ageCheckboxes = document.querySelectorAll('input[name="ages"]');
+
+    if (ageAllCheckbox) {
+        ageAllCheckbox.addEventListener('change', function() {
+            const isChecked = this.checked;
+            ageCheckboxes.forEach(cb => {
+                cb.checked = isChecked;
+            });
+        });
+    }
+
+    ageCheckboxes.forEach(cb => {
+        cb.addEventListener('change', function() {
+            if (!this.checked) {
+                if (ageAllCheckbox) {
+                    ageAllCheckbox.checked = false;
+                }
+                ageCheckboxes.forEach(otherCb => {
+                    otherCb.checked = false;
+                });
+            }
+        });
+    });
+
     // Chart Helper 인스턴스 생성 (상단: 예측, 하단: 백테스트)
     window.trendChartHelper = new TrendChartHelper('trend-chart');
     window.backtestChartHelper = new TrendChartHelper('backtest-chart');
