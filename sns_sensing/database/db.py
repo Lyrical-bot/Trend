@@ -13,11 +13,19 @@ db_dir = os.path.dirname(os.path.abspath(__file__))
 root_dir = os.path.dirname(os.path.dirname(db_dir))
 load_dotenv(dotenv_path=os.path.join(root_dir, ".env"))
 
-# 환경변수에서 DATABASE_URL 로드
-DATABASE_URL = os.getenv("DATABASE_URL")
+# 환경변수에서 DATABASE_URL 로드 (Azure Connection Strings Fallback 포함)
+DATABASE_URL = (
+    os.getenv("DATABASE_URL") or 
+    os.getenv("POSTGRESQLCONNSTR_DATABASE_URL") or 
+    os.getenv("CUSTOMCONNSTR_DATABASE_URL") or 
+    os.getenv("SQLCONNSTR_DATABASE_URL")
+)
+
+if DATABASE_URL:
+    DATABASE_URL = DATABASE_URL.strip().strip('"').strip("'")
 
 # PostgreSQL 비밀번호 특수문자 (%) 파싱 에러 방지 처리
-if DATABASE_URL and DATABASE_URL.startswith("postgresql"):
+if DATABASE_URL and (DATABASE_URL.startswith("postgresql") or DATABASE_URL.startswith("postgres")):
     from urllib.parse import urlparse, quote_plus, urlunparse
     try:
         parsed = urlparse(DATABASE_URL)
