@@ -36,7 +36,7 @@ class TrendChartHelper {
             allPeriods = Array.from(new Set(results[0].data.map(item => item.period))).sort();
         }
 
-        // --- 전체 기간을 기본 한계치로 설정 ---
+        // --- 전체 기간 및 초기 뷰포트 한계치 설정 ---
         let defaultMin = null;
         let defaultMax = null;
         if (allPeriods.length > 0) {
@@ -45,11 +45,14 @@ class TrendChartHelper {
 
             this.absoluteMin = absoluteMinTime;
             this.absoluteMax = maxTime;
-            this.currentMin = absoluteMinTime; // 120일 자르지 않고 전체 범위 보여주기
-            this.currentMax = maxTime;
+            
+            // 초기 노출 뷰포트는 최근 1년(365일)치만 보여주고 나머지는 스크롤/휠로 이동
+            const oneYearMs = 365 * 24 * 60 * 60 * 1000;
+            this.currentMin = Math.max(this.absoluteMin, this.absoluteMax - oneYearMs);
+            this.currentMax = this.absoluteMax;
 
-            defaultMin = this.absoluteMin;
-            defaultMax = this.absoluteMax;
+            defaultMin = this.currentMin;
+            defaultMax = this.absoluteMax; // max는 전체 끝점까지 연장
         }
 
         results.forEach((group, index) => {
@@ -592,12 +595,14 @@ class TrendChartHelper {
         chartEl.addEventListener('wheel', (e) => {
             if (!this.chart || !this.currentMin || !this.currentMax || !this.absoluteMin || !this.absoluteMax) return;
 
+            // 휠 동작 시 수직 방향 휠 줌이나 수직 브라우저 스크롤을 차단하고 가로 스크롤로 전담
+            e.preventDefault();
+
             const totalSpan = this.absoluteMax - this.absoluteMin;
             const visibleSpan = this.currentMax - this.currentMin;
 
-            // 전체가 다 보이는 상태(줌 안된 상태)가 아닐 때만 휠 스크롤 작동
+            // 스크롤이 가능한 여지(화면에 보이는 영역이 전체 영역보다 작을 때)가 있을 때 가로 이동 수행
             if (visibleSpan < totalSpan - (24 * 60 * 60 * 1000)) {
-                e.preventDefault(); // 기본 브라우저 수직 스크롤 방지
                 const direction = e.deltaY > 0 ? 'right' : 'left';
                 this.scrollX(direction);
             }

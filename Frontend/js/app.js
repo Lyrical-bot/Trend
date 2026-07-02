@@ -119,13 +119,13 @@ document.addEventListener('DOMContentLoaded', () => {
     // 페이지 로드 시 랭킹 및 Weak Signal 자동 로드
     fetchVelocityRanking();
 
-    // 2. 초기 기본값 설정 (조회 기간: 과거 10년 ~ 오늘)
+    // 2. 초기 기본값 설정 (조회 기간: 과거 2년 ~ 오늘)
     const today = new Date();
-    const tenYearsAgo = new Date();
-    tenYearsAgo.setFullYear(today.getFullYear() - 10);
+    const twoYearsAgo = new Date();
+    twoYearsAgo.setFullYear(today.getFullYear() - 2);
 
     endDateInput.value = formatDate(today);
-    startDateInput.value = formatDate(tenYearsAgo);
+    startDateInput.value = formatDate(twoYearsAgo);
 
     // 3. 필터 아코디언 토글 이벤트
     filterAccordionToggle.addEventListener('click', () => {
@@ -190,33 +190,11 @@ document.addEventListener('DOMContentLoaded', () => {
     forecastForm.addEventListener('submit', async (e) => {
         e.preventDefault();
 
-        // UI 상태 초기화
-        chartPlaceholder.style.display = 'none';
-        chartLoading.style.display = 'flex';
-        summaryCardsContainer.style.display = 'none';
-        reportSection.style.display = 'none';
-
-        // 백테스트 차트 및 관련 캡션 초기화
-        const btPlaceholder = document.getElementById('backtest-placeholder');
-        const btChartDiv = document.getElementById('backtest-chart');
-        const btCaption = document.getElementById('backtest-chart-caption');
-        const btScrollbarContainer = document.getElementById('backtest-chart-scrollbar-container');
-        if (btPlaceholder) btPlaceholder.style.display = 'flex';
-        if (btChartDiv) {
-            btChartDiv.style.opacity = '1';
-            btChartDiv.innerHTML = '';
+        // 트렌드 예측 분석 실행 버튼을 누르자마자 차트 화면으로 즉시 스크롤 이동
+        const trendSection = document.getElementById('trend-chart');
+        if (trendSection) {
+            trendSection.scrollIntoView({ behavior: 'smooth', block: 'center' });
         }
-        if (btCaption) btCaption.style.display = 'none';
-        if (btScrollbarContainer) btScrollbarContainer.style.display = 'none';
-
-        const btTitle = document.getElementById('backtest-chart-title');
-        if (btTitle) btTitle.textContent = "모델 정확도 검증 (과거 15일 백테스트)";
-
-        // 예측 차트 캡션 및 스크롤바 숨기기
-        const trendCaption = document.getElementById('trend-chart-caption');
-        const trendScrollbarContainer = document.getElementById('trend-chart-scrollbar-container');
-        if (trendCaption) trendCaption.style.display = 'none';
-        if (trendScrollbarContainer) trendScrollbarContainer.style.display = 'none';
 
         // 데이터 파싱
         const payload = {
@@ -241,6 +219,49 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
 
+        const firstGroup = payload.keywordGroups[0];
+        const representativeKeyword = (firstGroup && firstGroup.keywords.length > 0) ? firstGroup.keywords[0] : null;
+
+        // UI 상태 초기화
+        chartPlaceholder.style.display = 'none';
+        chartLoading.style.display = 'flex';
+        summaryCardsContainer.style.display = 'none';
+        reportSection.style.display = 'none';
+
+        // 백테스트 차트 및 관련 캡션 초기화
+        const btPlaceholder = document.getElementById('backtest-placeholder');
+        const btLoading = document.getElementById('backtest-loading');
+        const btLoadingMsg = document.getElementById('backtest-loading-msg');
+        const btChartDiv = document.getElementById('backtest-chart');
+        const btCaption = document.getElementById('backtest-chart-caption');
+        const btScrollbarContainer = document.getElementById('backtest-chart-scrollbar-container');
+        
+        if (btPlaceholder) btPlaceholder.style.display = 'none';
+        if (btChartDiv) {
+            btChartDiv.style.opacity = '0.3';
+            btChartDiv.innerHTML = '';
+        }
+        if (btCaption) btCaption.style.display = 'none';
+        if (btScrollbarContainer) btScrollbarContainer.style.display = 'none';
+
+        if (btLoading) {
+            btLoading.style.display = 'flex';
+            if (btLoadingMsg && representativeKeyword) {
+                btLoadingMsg.innerHTML = `<strong>${representativeKeyword}</strong> 1년치 과거 데이터 분할 백테스트 수행 중...`;
+            }
+        }
+
+        const btTitle = document.getElementById('backtest-chart-title');
+        if (btTitle) {
+            btTitle.textContent = "모델 정확도 검증 (과거 15일 백테스트)";
+        }
+
+        // 예측 차트 캡션 및 스크롤바 숨기기
+        const trendCaption = document.getElementById('trend-chart-caption');
+        const trendScrollbarContainer = document.getElementById('trend-chart-scrollbar-container');
+        if (trendCaption) trendCaption.style.display = 'none';
+        if (trendScrollbarContainer) trendScrollbarContainer.style.display = 'none';
+
         // 로딩 메시지에 사용자 입력 키워드 동적 매핑
         const loadingMsg = document.getElementById('loading-msg');
         if (loadingMsg && payload.keywordGroups.length > 0) {
@@ -257,24 +278,39 @@ document.addEventListener('DOMContentLoaded', () => {
         if (gender) payload.gender = gender;
         if (ages.length > 0) payload.ages = ages;
 
-        // 기상 변수 반영 옵션 파싱 (차트 영역 상단의 기온/강수량 체크박스 연동)
+        // 기상 변수 반영 옵션 파싱
         const useTemp = document.getElementById('chk-weather-temp') ? document.getElementById('chk-weather-temp').checked : true;
         const useRain = document.getElementById('chk-weather-rain') ? document.getElementById('chk-weather-rain').checked : true;
         payload.use_temp = useTemp;
         payload.use_rain = useRain;
 
         try {
-            const response = await fetch(`${API_BASE_URL}/api/predict`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify(payload)
-            });
+            // 두 개의 API 병렬 호출 (예측 + 백테스트)
+            const fetchPromises = [
+                fetch(`${API_BASE_URL}/api/predict`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                })
+            ];
 
-            const data = await response.json();
+            if (representativeKeyword) {
+                fetchPromises.push(
+                    fetch(`${API_BASE_URL}/api/evaluate-keyword`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ keyword: representativeKeyword, use_temp: useTemp, use_rain: useRain })
+                    })
+                );
+            }
 
-            if (!response.ok) {
+            const responses = await Promise.all(fetchPromises);
+            const predictResponse = responses[0];
+            const evaluateResponse = representativeKeyword ? responses[1] : null;
+
+            const data = await predictResponse.json();
+
+            if (!predictResponse.ok) {
                 throw new Error(data.detail || '트렌드 분석 중 오류가 발생했습니다.');
             }
 
@@ -304,17 +340,37 @@ document.addEventListener('DOMContentLoaded', () => {
                 trendTitle.textContent = `미래 30일 트렌드 예측 시각화: [${groupNames}]`;
             }
 
-            // 2. 요약 카드 동적 렌더링
+            // 2. 백테스트 차트 렌더링
+            if (btLoading) btLoading.style.display = 'none';
+            if (btChartDiv) btChartDiv.style.opacity = '1';
+
+            if (evaluateResponse && evaluateResponse.ok) {
+                const evaluateResult = await evaluateResponse.json();
+                window.backtestChartHelper.renderChart([{
+                    title: evaluateResult.keyword,
+                    keywords: [evaluateResult.keyword],
+                    data: evaluateResult.data
+                }], true);
+
+                if (btTitle && representativeKeyword) {
+                    btTitle.textContent = `모델 정확도 검증: [${representativeKeyword}] (과거 15일 백테스트)`;
+                }
+
+                if (btCaption && representativeKeyword) {
+                    btCaption.textContent = `검색한 키워드: ${representativeKeyword}`;
+                    btCaption.style.display = 'block';
+                }
+            } else {
+                if (btPlaceholder) btPlaceholder.style.display = 'flex';
+            }
+
+            // 3. 요약 카드 동적 렌더링
             renderSummaryCards(data.results, payload.timeUnit);
 
-            // 3. 리포트 본문 구성
+            // 4. 리포트 본문 구성
             renderDetailedReport(data.results, payload.timeUnit);
 
-            // 차트 영역으로 자동 스크롤 이동
-            const trendSection = document.getElementById('trend-chart');
-            if (trendSection) {
-                trendSection.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            }
+
 
         } catch (err) {
             chartLoading.style.display = 'none';
