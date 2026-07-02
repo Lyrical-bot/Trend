@@ -220,10 +220,11 @@ async def predict_trend(payload: PredictRequest):
                 _apply_scaling(historical, multiplier)
                 _apply_scaling(forecasted, multiplier)
                 
-                # summary 수치 업데이트
-                summary["lastHistoricalValue"] = round(summary["lastHistoricalValue"] * multiplier, 0)
-                summary["lastForecastValue"] = round(summary["lastForecastValue"] * multiplier, 0)
-                summary["maxRatio"] = round(summary["maxRatio"] * multiplier, 0)
+                # 에러 리포팅 상태가 아닐 때만 요약 지표 스케일링을 수행하여 KeyError 방지
+                if "error" not in summary:
+                    summary["lastHistoricalValue"] = round(summary["lastHistoricalValue"] * multiplier, 0)
+                    summary["lastForecastValue"] = round(summary["lastForecastValue"] * multiplier, 0)
+                    summary["maxRatio"] = round(summary["maxRatio"] * multiplier, 0)
 
                 # signal 내부의 volume 값도 스케일링
                 for sig in signals:
@@ -270,8 +271,8 @@ async def get_velocity_ranking_api(start_date: Optional[str] = None, end_date: O
         try:
             with open(VELOCITY_CACHE, "r", encoding="utf-8") as f:
                 return json.load(f)
-        except Exception:
-            pass # 캐시가 손상된 경우 무시하고 실시간 연산으로 넘어감
+        except Exception as e:
+            print(f"[Warning] Failed to load VELOCITY_CACHE: {e}")
 
     # 2. 캐시가 없고 실시간 분석 모듈이 존재하면 실시간 분석을 수행합니다.
     if get_velocity_ranking is not None:
@@ -300,8 +301,8 @@ async def get_weak_signals_api(target_date: Optional[str] = None, use_live: bool
         try:
             with open(WEAK_SIGNALS_CACHE, "r", encoding="utf-8") as f:
                 return json.load(f)
-        except Exception:
-            pass # 캐시가 손상된 경우 무시하고 실시간 연산으로 넘어감
+        except Exception as e:
+            print(f"[Warning] Failed to load WEAK_SIGNALS_CACHE: {e}")
             
     # 2. 캐시가 없을 시 실시간 랭킹 연산을 수행합니다.
     if detect_weak_signals is not None:
@@ -390,9 +391,11 @@ async def predict_single_keyword(payload: PredictKeywordRequest):
             _apply_scaling(historical, multiplier)
             _apply_scaling(forecasted, multiplier)
             
-            summary["lastHistoricalValue"] = round(summary["lastHistoricalValue"] * multiplier, 0)
-            summary["lastForecastValue"] = round(summary["lastForecastValue"] * multiplier, 0)
-            summary["maxRatio"] = round(summary["maxRatio"] * multiplier, 0)
+            # 에러 리포팅 상태가 아닐 때만 요약 지표 스케일링을 수행하여 KeyError 방지
+            if "error" not in summary:
+                summary["lastHistoricalValue"] = round(summary["lastHistoricalValue"] * multiplier, 0)
+                summary["lastForecastValue"] = round(summary["lastForecastValue"] * multiplier, 0)
+                summary["maxRatio"] = round(summary["maxRatio"] * multiplier, 0)
 
             # signal 내부의 volume 값도 스케일링
             for sig in signals:
@@ -419,7 +422,7 @@ async def evaluate_single_keyword(payload: PredictKeywordRequest):
         
         # 안정적인 데이터 조회를 위해 '어제'를 종료일로 설정합니다.
         end_date = datetime.now() - timedelta(days=1)
-        start_date = end_date - timedelta(days=3652)
+        start_date = end_date - timedelta(days=720)
         start_date_str = start_date.strftime("%Y-%m-%d")
         end_date_str = end_date.strftime("%Y-%m-%d")
         
@@ -428,7 +431,7 @@ async def evaluate_single_keyword(payload: PredictKeywordRequest):
 
         import asyncio
 
-        # 백테스트 학습 구간에 대응하는 10년치 기상 정보 병렬 수집
+        # 백테스트 학습 구간에 대응하는 2년치 기상 정보 병렬 수집
         naver_task = fetch_naver_trend(
             start_date=start_date_str,
             end_date=end_date_str,

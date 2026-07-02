@@ -36,21 +36,23 @@ class TrendChartHelper {
             allPeriods = Array.from(new Set(results[0].data.map(item => item.period))).sort();
         }
 
-        // --- 4개월 디폴트 줌 기간 계산 ---
+        // --- 전체 기간 및 초기 뷰포트 한계치 설정 ---
         let defaultMin = null;
         let defaultMax = null;
         if (allPeriods.length > 0) {
             const maxTime = new Date(allPeriods[allPeriods.length - 1]).getTime();
-            const minTime = maxTime - (120 * 24 * 60 * 60 * 1000); // 120일 전 (4개월)
             const absoluteMinTime = new Date(allPeriods[0]).getTime();
 
             this.absoluteMin = absoluteMinTime;
             this.absoluteMax = maxTime;
-            this.currentMin = Math.max(absoluteMinTime, minTime);
-            this.currentMax = maxTime;
+            
+            // 초기 노출 뷰포트는 최근 1년(365일)치만 보여주고 나머지는 스크롤/휠로 이동
+            const oneYearMs = 365 * 24 * 60 * 60 * 1000;
+            this.currentMin = Math.max(this.absoluteMin, this.absoluteMax - oneYearMs);
+            this.currentMax = this.absoluteMax;
 
             defaultMin = this.currentMin;
-            defaultMax = this.currentMax;
+            defaultMax = this.absoluteMax; // max는 전체 끝점까지 연장
         }
 
         results.forEach((group, index) => {
@@ -236,11 +238,13 @@ class TrendChartHelper {
             }
         }
 
+        const chartHeight = window.innerWidth < 768 ? 280 : 380;
+
         const options = {
             series: series,
             chart: {
                 type: 'line',
-                height: 380,
+                height: chartHeight,
                 background: 'transparent',
                 toolbar: {
                     show: false,
@@ -255,7 +259,8 @@ class TrendChartHelper {
                     }
                 },
                 zoom: {
-                    enabled: false
+                    enabled: true,
+                    autoScaleYaxis: true
                 },
                 dropShadow: {
                     enabled: true,
@@ -347,10 +352,12 @@ class TrendChartHelper {
                 
                 // 검색어 트렌드 시리즈 개수 파악
                 const primarySeriesCount = series.filter(s => s.name !== "평균 기온 (°C)" && s.name !== "일강수량 (mm)").length;
+                const firstSeriesName = series[0] ? series[0].name : undefined;
                 
                 for (let i = 0; i < primarySeriesCount; i++) {
                     yaxisConfig.push({
                         show: i === 0,
+                        seriesName: firstSeriesName, // 모든 검색량 시리즈 Y축이 첫 번째 눈금 스케일을 공유하게 설정하여 빨간 점 위치 오류 해결
                         min: 0,
                         tickAmount: 5,
                         labels: {
@@ -480,6 +487,13 @@ class TrendChartHelper {
 
         this.chart = new ApexCharts(document.querySelector(`#${this.containerId}`), options);
         this.chart.render();
+
+        // 렌더링 후 스크롤바 세팅 및 휠/슬라이더 리스너 적용
+        setTimeout(() => {
+            this.updateScrollbar();
+            this.setupScrollbarListener();
+            this.setupWheelListener();
+        }, 100);
     }
 
     /**
@@ -495,11 +509,14 @@ class TrendChartHelper {
         const currentSpan = this.currentMax - this.currentMin;
         let newSpan = currentSpan;
 
+        // 확대의 한계치: 딱 예측 값이 보이는 30일(30 * 24 * 3600 * 1000 ms)로 한정
+        const minSpan = 30 * 24 * 60 * 60 * 1000;
+
         if (direction === 'in') {
-            // 확대: 보여주는 구간(Span)을 절반으로 단축 (최소 7일 제한)
-            newSpan = Math.max(7 * 24 * 60 * 60 * 1000, currentSpan / 2);
+            // 확대: 보여주는 구간(Span)을 절반으로 단축하되 30일 이하로 가지 못하게 제한
+            newSpan = Math.max(minSpan, currentSpan / 2);
         } else if (direction === 'out') {
-            // 축소: 보여주는 구간(Span)을 2배로 확장 (최대 전체 범위 제한)
+            // 축소: 보여주는 구간(Span)을 2배로 확장
             newSpan = Math.min(this.absoluteMax - this.absoluteMin, currentSpan * 2);
         }
 
@@ -509,6 +526,7 @@ class TrendChartHelper {
 
         if (newMin < this.absoluteMin) {
             newMin = this.absoluteMin;
+            newMax = Math.min(this.absoluteMax, newMin + newSpan);
         }
 
         this.currentMin = newMin;
@@ -516,5 +534,111 @@ class TrendChartHelper {
 
         // ApexCharts zoomX API 호출
         this.chart.zoomX(newMin, newMax);
+        this.updateScrollbar();
+    }
+
+    /**
+     * 커스텀 스크롤바(슬라이더) UI 상태를 갱신합니다.
+     */
+    updateScrollbar() {
+        const scrollbarContainer = document.getElementById(`${this.containerId}-scrollbar-container`);
+        const scrollbar = document.getElementById(`${this.containerId}-scrollbar`);
+        if (!scrollbar || !scrollbarContainer) return;
+
+        if (!this.absoluteMin || !this.absoluteMax || !this.currentMin || !this.currentMax) {
+            scrollbarContainer.style.display = 'none';
+            return;
+        }
+
+        const totalSpan = this.absoluteMax - this.absoluteMin;
+        const visibleSpan = this.currentMax - this.currentMin;
+
+        // 1일(86400000ms)의 오차 한계를 줌
+        if (visibleSpan >= totalSpan - (24 * 60 * 60 * 1000)) {
+            scrollbarContainer.style.display = 'none';
+            return;
+        }
+
+        scrollbarContainer.style.display = 'flex';
+        scrollbar.min = this.absoluteMin;
+        scrollbar.max = this.absoluteMax - visibleSpan;
+        scrollbar.value = this.currentMin;
+    }
+
+    /**
+     * 커스텀 스크롤바(슬라이더) 조작 이벤트를 등록합니다.
+     */
+    setupScrollbarListener() {
+        const scrollbar = document.getElementById(`${this.containerId}-scrollbar`);
+        if (!scrollbar || this.scrollbarListenerAdded) return;
+
+        scrollbar.addEventListener('input', (e) => {
+            if (!this.chart || !this.currentMin || !this.currentMax || !this.absoluteMin || !this.absoluteMax) return;
+
+            const newMin = parseFloat(e.target.value);
+            const visibleSpan = this.currentMax - this.currentMin;
+            const newMax = newMin + visibleSpan;
+
+            this.currentMin = newMin;
+            this.currentMax = newMax;
+            this.chart.zoomX(newMin, newMax);
+        });
+
+        this.scrollbarListenerAdded = true;
+    }
+
+    /**
+     * 차트 영역 내 마우스 휠 동작 시 좌우 스크롤 이벤트를 등록합니다.
+     */
+    setupWheelListener() {
+        const chartEl = document.querySelector(`#${this.containerId}`);
+        if (!chartEl || this.wheelListenerAdded) return;
+
+        chartEl.addEventListener('wheel', (e) => {
+            if (!this.chart || !this.currentMin || !this.currentMax || !this.absoluteMin || !this.absoluteMax) return;
+
+            // 휠 동작 시 수직 방향 휠 줌이나 수직 브라우저 스크롤을 차단하고 가로 스크롤로 전담
+            e.preventDefault();
+
+            const totalSpan = this.absoluteMax - this.absoluteMin;
+            const visibleSpan = this.currentMax - this.currentMin;
+
+            // 스크롤이 가능한 여지(화면에 보이는 영역이 전체 영역보다 작을 때)가 있을 때 가로 이동 수행
+            if (visibleSpan < totalSpan - (24 * 60 * 60 * 1000)) {
+                const direction = e.deltaY > 0 ? 'right' : 'left';
+                this.scrollX(direction);
+            }
+        }, { passive: false });
+
+        this.wheelListenerAdded = true;
+    }
+
+    /**
+     * 가로 스크롤을 지정된 방향으로 10%만큼 이동시킵니다.
+     * direction: 'left' | 'right'
+     */
+    scrollX(direction) {
+        if (!this.chart || !this.currentMin || !this.currentMax || !this.absoluteMin || !this.absoluteMax) return;
+
+        const totalSpan = this.absoluteMax - this.absoluteMin;
+        const visibleSpan = this.currentMax - this.currentMin;
+        if (visibleSpan >= totalSpan) return;
+
+        const step = visibleSpan * 0.1; // 현재 화면 크기의 10%만큼 이동
+        let newMin = this.currentMin;
+        let newMax = this.currentMax;
+
+        if (direction === 'left') {
+            newMin = Math.max(this.absoluteMin, newMin - step);
+            newMax = newMin + visibleSpan;
+        } else {
+            newMax = Math.min(this.absoluteMax, newMax + step);
+            newMin = newMax - visibleSpan;
+        }
+
+        this.currentMin = newMin;
+        this.currentMax = newMax;
+        this.chart.zoomX(newMin, newMax);
+        this.updateScrollbar();
     }
 }

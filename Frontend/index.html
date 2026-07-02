@@ -43,8 +43,8 @@
                                     <span class="group-num">그룹 1</span>
                                     <button type="button" class="btn-remove-group" style="display:none;"><i class="fa-solid fa-trash"></i></button>
                                 </div>
-                                <input type="text" class="input-group-name" placeholder="그룹 명 (예: 인공지능)" required value="키워드 입력">
-                                <input type="text" class="input-keywords" placeholder="쉼표로 키워드 구분 (예: AI, 인공지능, 딥러닝)" required value="키워드 입력">
+                                <input type="text" class="input-group-name" placeholder="그룹 명 (예: 인기 식품)" required>
+                                <input type="text" class="input-keywords" placeholder="쉼표로 키워드 구분 (예: 마라탕, 탕후루)" required>
                             </div>
 
                         </div>
@@ -236,7 +236,7 @@
                         <h2 class="section-title"><i class="fa-brands fa-youtube" style="color: #ef4444;"></i> <span id="sns-chart-title">유튜브 SNS 트렌드 4대 지표 추적 (MVP)</span></h2>
                         <div style="display: flex; gap: 10px; align-items: center; font-size: 0.9rem;">
                             <input type="text" id="sns-keyword-input" class="clean-select" style="padding: 6px 12px; height: auto;" placeholder="키워드 입력 (예: 버터떡)">
-                            <button type="button" class="btn-primary btn-sm" onclick="window.fetchSnsTrend()" style="background-color: #ef4444; border-color: #ef4444;">
+                            <button type="button" class="btn-primary btn-sm" onclick="window.analyzeKeyword(document.getElementById('sns-keyword-input').value.trim())" style="background-color: #ef4444; border-color: #ef4444;">
                                 <i class="fa-solid fa-search"></i> 분석
                             </button>
                         </div>
@@ -351,6 +351,12 @@
                         <p>표에서 키워드를 클릭하면 <strong>미래 예측 차트</strong>가 표시됩니다.</p>
                     </div>
                     <div id="trend-chart"></div>
+                    <!-- 커스텀 차트 스크롤바 -->
+                    <div class="chart-scrollbar-container" id="trend-chart-scrollbar-container" style="display: none; padding: 0 20px; margin: 10px 0; align-items: center; gap: 10px;">
+                        <button type="button" class="clean-btn scroll-btn" onclick="window.trendChartHelper.scrollX('left')" style="width: 28px; height: 28px; border-radius: 50%; border: 1px solid var(--card-border); background: #fff; cursor: pointer; display: flex; align-items: center; justify-content: center; box-shadow: var(--shadow-sm);"><i class="fa-solid fa-chevron-left" style="font-size: 0.75rem; color: var(--text-main);"></i></button>
+                        <input type="range" class="chart-scrollbar" id="trend-chart-scrollbar" min="0" max="100" value="100" style="flex-grow: 1; height: 6px; background: #e5e7eb; border-radius: 3px; outline: none; -webkit-appearance: none; cursor: pointer;">
+                        <button type="button" class="clean-btn scroll-btn" onclick="window.trendChartHelper.scrollX('right')" style="width: 28px; height: 28px; border-radius: 50%; border: 1px solid var(--card-border); background: #fff; cursor: pointer; display: flex; align-items: center; justify-content: center; box-shadow: var(--shadow-sm);"><i class="fa-solid fa-chevron-right" style="font-size: 0.75rem; color: var(--text-main);"></i></button>
+                    </div>
                     <div id="trend-chart-caption" class="chart-caption" style="display: none; text-align: center; margin-top: 10px; font-weight: bold; color: #000000; font-size: 0.95rem;"></div>
                 </section>
 
@@ -383,6 +389,12 @@
                         <p>표에서 키워드를 클릭하면 <strong>백테스트 검증 차트</strong>가 함께 표시됩니다.</p>
                     </div>
                     <div id="backtest-chart"></div>
+                    <!-- 커스텀 차트 스크롤바 -->
+                    <div class="chart-scrollbar-container" id="backtest-chart-scrollbar-container" style="display: none; padding: 0 20px; margin: 10px 0; align-items: center; gap: 10px;">
+                        <button type="button" class="clean-btn scroll-btn" onclick="window.backtestChartHelper.scrollX('left')" style="width: 28px; height: 28px; border-radius: 50%; border: 1px solid var(--card-border); background: #fff; cursor: pointer; display: flex; align-items: center; justify-content: center; box-shadow: var(--shadow-sm);"><i class="fa-solid fa-chevron-left" style="font-size: 0.75rem; color: var(--text-main);"></i></button>
+                        <input type="range" class="chart-scrollbar" id="backtest-chart-scrollbar" min="0" max="100" value="100" style="flex-grow: 1; height: 6px; background: #e5e7eb; border-radius: 3px; outline: none; -webkit-appearance: none; cursor: pointer;">
+                        <button type="button" class="clean-btn scroll-btn" onclick="window.backtestChartHelper.scrollX('right')" style="width: 28px; height: 28px; border-radius: 50%; border: 1px solid var(--card-border); background: #fff; cursor: pointer; display: flex; align-items: center; justify-content: center; box-shadow: var(--shadow-sm);"><i class="fa-solid fa-chevron-right" style="font-size: 0.75rem; color: var(--text-main);"></i></button>
+                    </div>
                     <div id="backtest-chart-caption" class="chart-caption" style="display: none; text-align: center; margin-top: 10px; font-weight: bold; color: #000000; font-size: 0.95rem;"></div>
                 </section>
 

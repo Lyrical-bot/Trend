@@ -119,13 +119,13 @@ document.addEventListener('DOMContentLoaded', () => {
     // 페이지 로드 시 랭킹 및 Weak Signal 자동 로드
     fetchVelocityRanking();
 
-    // 2. 초기 기본값 설정 (조회 기간: 과거 10년 ~ 오늘)
+    // 2. 초기 기본값 설정 (조회 기간: 과거 2년 ~ 오늘)
     const today = new Date();
-    const tenYearsAgo = new Date();
-    tenYearsAgo.setFullYear(today.getFullYear() - 10);
+    const twoYearsAgo = new Date();
+    twoYearsAgo.setFullYear(today.getFullYear() - 2);
 
     endDateInput.value = formatDate(today);
-    startDateInput.value = formatDate(tenYearsAgo);
+    startDateInput.value = formatDate(twoYearsAgo);
 
     // 3. 필터 아코디언 토글 이벤트
     filterAccordionToggle.addEventListener('click', () => {
@@ -190,11 +190,11 @@ document.addEventListener('DOMContentLoaded', () => {
     forecastForm.addEventListener('submit', async (e) => {
         e.preventDefault();
 
-        // UI 상태 초기화
-        chartPlaceholder.style.display = 'none';
-        chartLoading.style.display = 'flex';
-        summaryCardsContainer.style.display = 'none';
-        reportSection.style.display = 'none';
+        // 트렌드 예측 분석 실행 버튼을 누르자마자 차트 화면으로 즉시 스크롤 이동
+        const trendSection = document.getElementById('trend-chart');
+        if (trendSection) {
+            trendSection.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
 
         // 데이터 파싱
         const payload = {
@@ -219,6 +219,49 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
 
+        const firstGroup = payload.keywordGroups[0];
+        const representativeKeyword = (firstGroup && firstGroup.keywords.length > 0) ? firstGroup.keywords[0] : null;
+
+        // UI 상태 초기화
+        chartPlaceholder.style.display = 'none';
+        chartLoading.style.display = 'flex';
+        summaryCardsContainer.style.display = 'none';
+        reportSection.style.display = 'none';
+
+        // 백테스트 차트 및 관련 캡션 초기화
+        const btPlaceholder = document.getElementById('backtest-placeholder');
+        const btLoading = document.getElementById('backtest-loading');
+        const btLoadingMsg = document.getElementById('backtest-loading-msg');
+        const btChartDiv = document.getElementById('backtest-chart');
+        const btCaption = document.getElementById('backtest-chart-caption');
+        const btScrollbarContainer = document.getElementById('backtest-chart-scrollbar-container');
+        
+        if (btPlaceholder) btPlaceholder.style.display = 'none';
+        if (btChartDiv) {
+            btChartDiv.style.opacity = '0.3';
+            btChartDiv.innerHTML = '';
+        }
+        if (btCaption) btCaption.style.display = 'none';
+        if (btScrollbarContainer) btScrollbarContainer.style.display = 'none';
+
+        if (btLoading) {
+            btLoading.style.display = 'flex';
+            if (btLoadingMsg && representativeKeyword) {
+                btLoadingMsg.innerHTML = `<strong>${representativeKeyword}</strong> 1년치 과거 데이터 분할 백테스트 수행 중...`;
+            }
+        }
+
+        const btTitle = document.getElementById('backtest-chart-title');
+        if (btTitle) {
+            btTitle.textContent = "모델 정확도 검증 (과거 15일 백테스트)";
+        }
+
+        // 예측 차트 캡션 및 스크롤바 숨기기
+        const trendCaption = document.getElementById('trend-chart-caption');
+        const trendScrollbarContainer = document.getElementById('trend-chart-scrollbar-container');
+        if (trendCaption) trendCaption.style.display = 'none';
+        if (trendScrollbarContainer) trendScrollbarContainer.style.display = 'none';
+
         // 로딩 메시지에 사용자 입력 키워드 동적 매핑
         const loadingMsg = document.getElementById('loading-msg');
         if (loadingMsg && payload.keywordGroups.length > 0) {
@@ -235,24 +278,39 @@ document.addEventListener('DOMContentLoaded', () => {
         if (gender) payload.gender = gender;
         if (ages.length > 0) payload.ages = ages;
 
-        // 기상 변수 반영 옵션 파싱 (차트 영역 상단의 기온/강수량 체크박스 연동)
+        // 기상 변수 반영 옵션 파싱
         const useTemp = document.getElementById('chk-weather-temp') ? document.getElementById('chk-weather-temp').checked : true;
         const useRain = document.getElementById('chk-weather-rain') ? document.getElementById('chk-weather-rain').checked : true;
         payload.use_temp = useTemp;
         payload.use_rain = useRain;
 
         try {
-            const response = await fetch(`${API_BASE_URL}/api/predict`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify(payload)
-            });
+            // 두 개의 API 병렬 호출 (예측 + 백테스트)
+            const fetchPromises = [
+                fetch(`${API_BASE_URL}/api/predict`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                })
+            ];
 
-            const data = await response.json();
+            if (representativeKeyword) {
+                fetchPromises.push(
+                    fetch(`${API_BASE_URL}/api/evaluate-keyword`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ keyword: representativeKeyword, use_temp: useTemp, use_rain: useRain })
+                    })
+                );
+            }
 
-            if (!response.ok) {
+            const responses = await Promise.all(fetchPromises);
+            const predictResponse = responses[0];
+            const evaluateResponse = representativeKeyword ? responses[1] : null;
+
+            const data = await predictResponse.json();
+
+            if (!predictResponse.ok) {
                 throw new Error(data.detail || '트렌드 분석 중 오류가 발생했습니다.');
             }
 
@@ -275,17 +333,44 @@ document.addEventListener('DOMContentLoaded', () => {
             const showRain = chkRain ? chkRain.checked : false;
             window.trendChartHelper.renderChart(data.results, false, data.weather, showTemp, showRain);
 
-            // 2. 요약 카드 동적 렌더링
+            // 미래 예측 차트 제목 업데이트
+            const trendTitle = document.getElementById('trend-chart-title');
+            if (trendTitle && payload.keywordGroups.length > 0) {
+                const groupNames = payload.keywordGroups.map(g => g.groupName).join(', ');
+                trendTitle.textContent = `미래 30일 트렌드 예측 시각화: [${groupNames}]`;
+            }
+
+            // 2. 백테스트 차트 렌더링
+            if (btLoading) btLoading.style.display = 'none';
+            if (btChartDiv) btChartDiv.style.opacity = '1';
+
+            if (evaluateResponse && evaluateResponse.ok) {
+                const evaluateResult = await evaluateResponse.json();
+                window.backtestChartHelper.renderChart([{
+                    title: evaluateResult.keyword,
+                    keywords: [evaluateResult.keyword],
+                    data: evaluateResult.data
+                }], true);
+
+                if (btTitle && representativeKeyword) {
+                    btTitle.textContent = `모델 정확도 검증: [${representativeKeyword}] (과거 15일 백테스트)`;
+                }
+
+                if (btCaption && representativeKeyword) {
+                    btCaption.textContent = `검색한 키워드: ${representativeKeyword}`;
+                    btCaption.style.display = 'block';
+                }
+            } else {
+                if (btPlaceholder) btPlaceholder.style.display = 'flex';
+            }
+
+            // 3. 요약 카드 동적 렌더링
             renderSummaryCards(data.results, payload.timeUnit);
 
-            // 3. 리포트 본문 구성
+            // 4. 리포트 본문 구성
             renderDetailedReport(data.results, payload.timeUnit);
 
-            // 차트 영역으로 자동 스크롤 이동
-            const trendSection = document.getElementById('trend-chart');
-            if (trendSection) {
-                trendSection.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            }
+
 
         } catch (err) {
             chartLoading.style.display = 'none';
@@ -482,7 +567,7 @@ window.fetchVelocityRanking = async function () {
             }
 
             html += `
-                <tr onclick="window.fetchSingleKeywordForecast('${row.keyword}')" style="border-bottom: 1px solid var(--border-light); transition: background-color 0.2s; cursor: pointer;" onmouseover="this.style.backgroundColor='rgba(139, 92, 246, 0.1)'" onmouseout="this.style.backgroundColor='transparent'">
+                <tr onclick="window.analyzeKeyword('${row.keyword}')" style="border-bottom: 1px solid var(--border-light); transition: background-color 0.2s; cursor: pointer;" onmouseover="this.style.backgroundColor='rgba(139, 92, 246, 0.1)'" onmouseout="this.style.backgroundColor='transparent'">
                     <td style="padding: 12px; font-weight: 700; color: var(--text-main);">${index + 1}</td>
                     <td style="padding: 12px; text-align: left; font-weight: 500;">${row.keyword}</td>
                     <td style="padding: 12px; color: var(--text-muted);">${row.avg_prev_7.toLocaleString()}건</td>
@@ -588,7 +673,7 @@ window.renderWeakSignalPage = function (page) {
         else if (row.signal_level === 'LOW') badgeStyle = 'background: #6b7280; color: white;';
 
         html += `
-            <tr onclick="window.fetchSingleKeywordForecast('${row.keyword}')" style="border-bottom: 1px solid var(--border-light); transition: background-color 0.2s; cursor: pointer;" onmouseover="this.style.backgroundColor='rgba(139, 92, 246, 0.1)'" onmouseout="this.style.backgroundColor='transparent'">
+            <tr onclick="window.analyzeKeyword('${row.keyword}')" style="border-bottom: 1px solid var(--border-light); transition: background-color 0.2s; cursor: pointer;" onmouseover="this.style.backgroundColor='rgba(139, 92, 246, 0.1)'" onmouseout="this.style.backgroundColor='transparent'">
                 <td style="padding: 12px; font-weight: 700; color: var(--text-main);">${actualIndex + 1}</td>
                 <td style="padding: 12px; text-align: left; font-weight: 700;">${row.keyword}</td>
                 <td style="padding: 12px; font-weight: 800; font-size: 1.1rem; color: #8b5cf6;">${row.trend_score}</td>
@@ -821,9 +906,9 @@ window.fetchSingleKeywordForecast = async function (keyword) {
 };
 
 // 유튜브 SNS 트렌드 (MVP) 호출 및 렌더링
-window.fetchSnsTrend = async function() {
+window.fetchSnsTrend = async function(keywordArg) {
     const inputEl = document.getElementById('sns-keyword-input');
-    const keyword = inputEl ? inputEl.value.trim() : '';
+    const keyword = keywordArg || (inputEl ? inputEl.value.trim() : '');
     
     if (!keyword) {
         alert('키워드를 입력해주세요.');
@@ -1213,11 +1298,7 @@ ${diversityMsg}`;
             
             // 클릭 시 검색창에 넣고 자동 분석!
             chip.onclick = () => {
-                const input = document.getElementById('sns-keyword-input');
-                if (input) {
-                    input.value = k.keyword;
-                    window.fetchSnsTrend();
-                }
+                window.analyzeKeyword(k.keyword);
             };
             
             container.appendChild(chip);
@@ -1232,3 +1313,30 @@ ${diversityMsg}`;
 document.addEventListener('DOMContentLoaded', () => {
     window.fetchDiscoveredKeywords();
 });
+
+// 통합 검색 분석 오케스트레이터 함수 (유튜브 SNS + 네이버 트렌드 예측 동시 반영)
+window.analyzeKeyword = function(keyword) {
+    if (!keyword) {
+        alert('분석할 키워드를 입력해주세요.');
+        return;
+    }
+
+    // 1. 유튜브 SNS 입력필드 동기화
+    const inputEl = document.getElementById('sns-keyword-input');
+    if (inputEl) {
+        inputEl.value = keyword;
+    }
+
+    // 2. 왼쪽 사이드바 그룹 1 입력필드 동기화 (사이드바와 일관성 유지)
+    const firstGroup = document.querySelector('#keyword-groups-container .keyword-group-item[data-index="0"]');
+    if (firstGroup) {
+        const groupNameInput = firstGroup.querySelector('.input-group-name');
+        const keywordsInput = firstGroup.querySelector('.input-keywords');
+        if (groupNameInput) groupNameInput.value = keyword;
+        if (keywordsInput) keywordsInput.value = keyword;
+    }
+
+    // 3. 유튜브 SNS 분석 및 네이버 예측 병렬 구동
+    window.fetchSnsTrend(keyword);
+    window.fetchSingleKeywordForecast(keyword);
+};
