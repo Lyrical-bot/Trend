@@ -244,3 +244,20 @@ def get_discovered_keywords(db: Session = Depends(get_db)):
     # 3. Trend Score 기준 내림차순 정렬 후 Top 15 반환
     scored_keywords.sort(key=lambda x: x["score"], reverse=True)
     return scored_keywords[:15]
+
+
+@router.get("/debug-db")
+def debug_db(db: Session = Depends(get_db)):
+    try:
+        from sns_sensing.models.models import Video, TrendingKeyword
+        video_count = db.query(Video).count()
+        trend_count = db.query(TrendingKeyword).filter(TrendingKeyword.status == 'TREND').count()
+        return {
+            "dialect": db.bind.dialect.name,
+            "url_prefix": str(db.bind.url)[:15],
+            "video_count": video_count,
+            "trend_count": trend_count,
+            "system_time": str(datetime.now())
+        }
+    except Exception as e:
+        return {"error": str(e)}
