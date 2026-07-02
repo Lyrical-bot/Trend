@@ -6,11 +6,14 @@ from dotenv import load_dotenv
 root_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 load_dotenv(os.path.join(root_dir, ".env"))
 
-client = AsyncAzureOpenAI(
-    azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT", ""),
-    api_key=os.getenv("AZURE_OPENAI_API_KEY", ""),
-    api_version=os.getenv("AZURE_OPENAI_API_VERSION", "2024-02-15-preview")
-)
+api_key = os.getenv("AZURE_OPENAI_API_KEY", "")
+client = None
+if api_key and api_key != "여기에_API_키를_입력하세요":
+    client = AsyncAzureOpenAI(
+        azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT", ""),
+        api_key=api_key,
+        api_version=os.getenv("AZURE_OPENAI_API_VERSION", "2024-02-15-preview")
+    )
 
 deployment_name = os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME", "gpt-4o-mini")
 
@@ -87,7 +90,7 @@ async def extract_keywords_info(candidates: list, recent_canonicals: list = None
     if not recent_canonicals:
         recent_canonicals = []
 
-    if not os.getenv("AZURE_OPENAI_API_KEY") or os.getenv("AZURE_OPENAI_API_KEY") == "여기에_API_키를_입력하세요":
+    if not client or not os.getenv("AZURE_OPENAI_API_KEY") or os.getenv("AZURE_OPENAI_API_KEY") == "여기에_API_키를_입력하세요":
         print("[WARNING] Azure OpenAI API Key is missing.")
         return {}
 

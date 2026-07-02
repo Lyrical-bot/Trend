@@ -37,7 +37,7 @@ async def fetch_search_ad_volume(keywords: List[str]) -> Dict[str, float]:
         print("[Warning] 네이버 검색광고 API 키가 설정되지 않아 절대 수치 환산을 건너뜁니다.")
         return results
 
-    base_url = "https://api.naver.com"
+    base_url = "https://api.searchad.naver.com"
     uri = "/keywordstool"
     method = "GET"
 
