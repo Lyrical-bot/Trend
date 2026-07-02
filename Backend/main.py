@@ -19,6 +19,7 @@ except ImportError:
     get_meta_accounts = None
 
 from weather_api import fetch_weather_data
+from interpret_router import router as interpret_router
 
 # -------------------------------------------------------------
 # [수정일자: 2026-06-30]
@@ -103,6 +104,8 @@ try:
     app.include_router(sns_router, prefix="/api/sns", tags=["SNS Sensing MVP"])
 except ImportError as e:
     print(f"SNS Sensing 모듈을 불러올 수 없습니다: {e}")
+
+app.include_router(interpret_router, prefix="/api", tags=["RAG Trend Interpreter"])
 # ===============================================
 
 

@@ -1155,6 +1155,33 @@ window.fetchSnsTrend = async function(keywordArg) {
             }
         }
 
+        // 2-2. [NEW] RAG AI 트렌드 심층 분석 보고서 호출
+        const trendInterpretContainer = document.getElementById('trend-interpretation-container');
+        const interpretContent = document.getElementById('trend-interpretation-content');
+        
+        if (trendInterpretContainer && interpretContent) {
+            trendInterpretContainer.style.display = 'block';
+            interpretContent.textContent = 'RAG AI 분석가가 실시간 데이터를 바탕으로 트렌드를 심층 분석하고 있습니다...';
+            
+            try {
+                const interpretRes = await fetch(`${API_BASE_URL}/api/interpret`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ keyword: keyword })
+                });
+                
+                if (interpretRes.ok) {
+                    const interpretData = await interpretRes.json();
+                    interpretContent.textContent = interpretData.interpretation;
+                } else {
+                    interpretContent.textContent = 'AI 분석을 생성하는 데 실패했습니다. API 키 구성을 확인해주세요.';
+                }
+            } catch(e) {
+                console.error("RAG AI Interpretation API Error:", e);
+                interpretContent.textContent = 'AI 분석을 불러오는 과정에서 오류가 발생했습니다.';
+            }
+        }
+
         // 3. 타임라인 차트 렌더링
         if (chartDiv) {
             chartDiv.style.display = 'block';
