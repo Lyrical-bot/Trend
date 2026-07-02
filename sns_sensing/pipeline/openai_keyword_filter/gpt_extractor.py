@@ -203,6 +203,18 @@ def run_gpt_extractor(client, videos: list[dict], canonical_names: list[str]) ->
     ]
     
     import os
+    from openai import AzureOpenAI
+    
+    try:
+        client = AzureOpenAI(
+            azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT"),
+            api_key=os.getenv("AZURE_OPENAI_API_KEY"),
+            api_version=os.getenv("AZURE_OPENAI_API_VERSION")
+        )
+    except Exception as e:
+        print(f"[Warning] AzureOpenAI 환경변수가 누락되어 GPT 추출기가 비활성화됩니다: {e}")
+        client = None
+
     model_name = os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME", "gpt-4o-mini")
     
     response = client.beta.chat.completions.parse(
