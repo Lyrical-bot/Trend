@@ -23,23 +23,36 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        if [ -f Backend/requirements.txt ]; then pip install -r Backend/requirements.txt; fi
+        # Azure App Service Python이 자동으로 PYTHONPATH에 추가하는 경로에 패키지 설치
+        if [ -f Backend/requirements.txt ]; then pip install -r Backend/requirements.txt --target=".python_packages/lib/site-packages"; fi
         
     - name: Lint and Syntax check
       run: |
-        # 파이썬 파일들의 기본 구문 오류(Syntax Error) 빌드 검증
         python -m py_compile Backend/*.py
         
+    - name: Upload artifact for deployment jobs
+      uses: actions/upload-artifact@v4
+      with:
+        name: python-app
+        path: |
+          .
+          !.git
+          !.github
+
   deploy:
     needs: build
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     steps:
-    - uses: actions/checkout@v4
+    - name: Download artifact from build job
+      uses: actions/download-artifact@v4
+      with:
+        name: python-app
+        path: .
 
     - name: Zip artifact for deployment
       run: |
-        # 배포 패키지 압축 (가상환경 venv 및 git 폴더 제외)
+        # 배포 패키지 압축 (.python_packages 포함)
         zip -r release.zip . -x "*.git*" -x "*venv*" -x "*.github*" -x "*__pycache__*"
 
     - name: Deploy to Azure Web App
