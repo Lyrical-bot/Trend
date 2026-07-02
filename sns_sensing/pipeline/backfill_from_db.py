@@ -1,19 +1,16 @@
 import os
 import sys
-import asyncio
 import logging
+from datetime import datetime, timedelta
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 from sns_sensing.database.db import SessionLocal
-from sns_sensing.models.models import Video, Keyword, KeywordStat, CanonicalKeyword, CoOccurrence
-from sns_sensing.pipeline.youtube.discovery.keyword_discovery import extract_keywords
-from sns_sensing.pipeline.keyword_extractor import KeywordExtractor
-from sns_sensing.pipeline.candidate_selector import select_candidates, local_dictionary_matching
-from sns_sensing.pipeline.openai_keyword_filter.keyword_filter import extract_keywords_info
-from sns_sensing.pipeline.runner import save_gpt_results_to_db
+from sns_sensing.models.models import Video, Keyword, KeywordStat, CanonicalKeyword, TrendingKeyword
+from sns_sensing.pipeline.openai_keyword_filter.gpt_extractor import get_canonical_names_sample, run_gpt_extractor, force_compound_flag
+from sns_sensing.pipeline.youtube.analytics.signal_engine import update_expired_trends, calculate_spike_candidates
+from openai import OpenAI, AzureOpenAI
 
 logging.basicConfig(level=logging.INFO, format='%(message)s')
 logger = logging.getLogger(__name__)
@@ -21,82 +18,112 @@ logger = logging.getLogger(__name__)
 def run_backfill():
     db: Session = SessionLocal()
     try:
-        videos = db.query(Video).order_by(Video.published_at.desc()).limit(150).all()
-        logger.info(f"DB에서 {len(videos)}개의 영상을 가져와서 재분석합니다...")
+        # 최근 7일치 영상 가져오기
+        recent_start = datetime.now() - timedelta(days=7)
+        videos = db.query(Video).filter(Video.published_at >= recent_start).order_by(Video.published_at.desc()).all()
         
-        extractor = KeywordExtractor()
-        video_to_keywords = {}
-        
+        # runner.py처럼 dict 형태로 변환
+        raw_videos = []
         for v in videos:
-            combined_text = f"{v.title} {v.description}"
-            extracted_words = extract_keywords(combined_text)
+            raw_videos.append({
+                'video_id': v.video_id,
+                'title': v.title,
+                'description': v.description,
+                'published_at': v.published_at,
+                'channel_id': v.channel_id,
+                'channel_title': v.channel_title,
+                'collected_at': v.collected_at
+            })
             
-            video_to_keywords[v.video_id] = {
-                'v_data': {
-                    'channel_id': v.channel_id,
-                    'video_id': v.video_id,
-                    'collected_at': v.collected_at
-                },
-                'words': extracted_words
-            }
-            extractor.add_document(extracted_words)
-            
-        co_occurrences = extractor.get_co_occurrences(min_count=2)
-        for w1, w2, count in co_occurrences:
-            existing = db.query(CoOccurrence).filter(CoOccurrence.keyword == w1, CoOccurrence.co_keyword == w2).first()
-            if existing:
-                existing.count += count
-            else:
-                new_co = CoOccurrence(keyword=w1, co_keyword=w2, count=count)
-                db.add(new_co)
-        db.commit()
+        logger.info(f"DB에서 {len(raw_videos)}개의 최근(7일내) 영상을 가져와서 GPT-Native 추출기로 재분석합니다...")
+        
+        from dotenv import load_dotenv
+        load_dotenv(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), ".env"))
+        
+        if os.getenv("AZURE_OPENAI_API_KEY"):
+            client = AzureOpenAI(
+                api_key=os.getenv("AZURE_OPENAI_API_KEY"),
+                api_version=os.getenv("AZURE_OPENAI_API_VERSION", "2025-01-01-preview"),
+                azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT")
+            )
+        else:
+            client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-        top_candidates = extractor.get_top_candidates(top_n=120)
-        final_candidates = select_candidates(db, top_candidates, current_time=datetime.now())
+        canonical_rows = db.query(CanonicalKeyword.canonical_name, CanonicalKeyword.category, CanonicalKeyword.created_at).order_by(CanonicalKeyword.id.desc()).all()
+        canonical_dicts = [{"canonical_name": row[0], "category": row[1], "created_at": row[2]} for row in canonical_rows]
+        sampled_canonicals = get_canonical_names_sample(canonical_dicts, total_limit=50)
         
-        matched_results, unmatched_candidates = local_dictionary_matching(db, final_candidates)
-        logger.info(f"GPT 전송 대상: {len(unmatched_candidates)}개")
-        
-        recent_canonicals = [c[0] for c in db.query(CanonicalKeyword.canonical_name).limit(100).all()]
-        gpt_results = asyncio.run(extract_keywords_info(unmatched_candidates, recent_canonicals))
-        
-        gpt_mapping = save_gpt_results_to_db(db, gpt_results)
-        
-        final_raw_to_canonical = {}
-        for kw, info in matched_results.items():
-            final_raw_to_canonical[kw] = info.get("canonical", kw)
-        for kw, canonical in gpt_mapping.items():
-            final_raw_to_canonical[kw] = canonical
-            
+        gpt_results_list = []
+        # 배치 사이즈 10
+        for i in range(0, len(raw_videos), 10):
+            batch_videos = raw_videos[i:i+10]
+            logger.info(f"처리 중: {i}/{len(raw_videos)}...")
+            try:
+                batch_result = run_gpt_extractor(client, batch_videos, sampled_canonicals)
+                gpt_results_list.extend(batch_result)
+            except Exception as e:
+                logger.error(f"GPT 배치 처리 중 에러: {e}")
+                
         keywords_extracted = 0
         new_keywords_count = 0
         
-        for video_id, data in video_to_keywords.items():
-            v_data = data['v_data']
-            words = data['words']
+        for v_result in gpt_results_list:
+            vid = v_result["video_id"]
+            v_data = next((v for v in raw_videos if v['video_id'] == vid), None)
+            if not v_data:
+                continue
+                
+            stat_hour = v_data['collected_at'].replace(minute=0, second=0, microsecond=0)
             
-            valid_canonicals = set()
-            for w in words:
-                if w in final_raw_to_canonical:
-                    valid_canonicals.add(final_raw_to_canonical[w])
-                    
-            for c_word in valid_canonicals:
-                kw_obj = Keyword(video_id=video_id, keyword=c_word)
+            for kw_info in v_result["keywords"]:
+                kw = kw_info["keyword"]
+                is_compound = kw_info["is_compound"]
+                is_compound = force_compound_flag(kw, is_compound)
+                
+                # 1. Keyword 적재
+                kw_obj = Keyword(video_id=vid, keyword=kw)
                 db.add(kw_obj)
                 keywords_extracted += 1
                 
-                stat_hour = v_data['collected_at'].replace(minute=0, second=0, microsecond=0)
-                stat_obj = db.query(KeywordStat).filter(KeywordStat.keyword == c_word, KeywordStat.hour == stat_hour).first()
+                # 2. KeywordStat 업데이트
+                stat_obj = db.query(KeywordStat).filter(KeywordStat.keyword == kw, KeywordStat.hour == stat_hour).first()
                 if not stat_obj:
-                    stat_obj = KeywordStat(keyword=c_word, hour=stat_hour, mention_count=1, channel_count=1)
+                    stat_obj = KeywordStat(keyword=kw, hour=stat_hour, mention_count=1, channel_count=1)
                     db.add(stat_obj)
                     new_keywords_count += 1
                 else:
                     stat_obj.mention_count += 1
-                    stat_obj.channel_count += 1
                     
+                # 3. TrendingKeyword 상태 설정
+                existing_trend = db.query(TrendingKeyword).filter(TrendingKeyword.keyword == kw).first()
+                if not existing_trend:
+                    status = "PENDING" if is_compound else "NOISE"
+                    reason = "소급 추출" if is_compound else "단일 일반 식재료(is_compound=False)"
+                    new_trend = TrendingKeyword(keyword=kw, status=status, reason=reason, detected_at=datetime.now())
+                    db.add(new_trend)
+                    try:
+                        db.flush()
+                    except Exception as e:
+                        db.rollback()
+                        logger.error(f"DB Flush 에러 (키워드: {kw}): {e}")
         db.commit()
-        logger.info(f"재추출 완료! (통계 {new_keywords_count}개 추가)")
+        
+        # 4. 승격 게이트
+        update_expired_trends(db, current_time=datetime.now(), min_mentions=5)
+        spike_candidates = calculate_spike_candidates(db, current_time=datetime.now(), min_mentions=5, max_candidates=100)
+        
+        promoted_count = 0
+        for sc in spike_candidates:
+            kw = sc['keyword']
+            trend = db.query(TrendingKeyword).filter(TrendingKeyword.keyword == kw).first()
+            if trend and trend.status == "PENDING":
+                trend.status = "TREND"
+                trend.reason = "스파이크 달성 (Backfill)"
+                trend.updated_at = datetime.now()
+                promoted_count += 1
+        db.commit()
+        
+        logger.info(f"재추출 완료! 통계 {new_keywords_count}개 추가, {promoted_count}개 TREND 승격.")
         
     except Exception as e:
         db.rollback()

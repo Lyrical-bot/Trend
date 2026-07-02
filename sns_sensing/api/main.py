@@ -17,7 +17,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
 from sns_sensing.database.db import get_db, engine, Base
-from sns_sensing.models.models import KeywordStat, Video, VideoStat, Keyword
+from sns_sensing.models.models import KeywordStat, Video, VideoStat, Keyword, TrendingKeyword
 from sqlalchemy import func
 import math
 from sns_sensing.pipeline.youtube.analytics.signal_engine import calculate_all_signals
@@ -182,7 +182,7 @@ def get_discovered_keywords(db: Session = Depends(get_db)):
     # N = 7일 기준으로 통일 (과거 띄엄띄엄 올라온 영상들의 백필 착시 현상 방지)
     recent_start = datetime.now() - timedelta(days=7)
 
-    # 1. 키워드별 채널다양성 / 업로드수 / 평균조회수 / 평균구독자 집계
+    # 1. 키워드별 채널다양성 / 업로드수 / 평균조회수 / 평균구독자 집계 (TREND 상태만)
     rows = (
         db.query(
             Keyword.keyword,
@@ -191,9 +191,13 @@ def get_discovered_keywords(db: Session = Depends(get_db)):
             func.avg(VideoStat.view_count).label("avg_views"),
             func.avg(Video.subscriber_count).label("avg_subs"),
         )
+        .join(TrendingKeyword, TrendingKeyword.keyword == Keyword.keyword)
         .join(Video, Keyword.video_id == Video.video_id)
         .join(VideoStat, Video.video_id == VideoStat.video_id)
-        .filter(Video.published_at >= recent_start)
+        .filter(
+            Video.published_at >= recent_start,
+            TrendingKeyword.status == "TREND"
+        )
         .group_by(Keyword.keyword)
         .all()
     )

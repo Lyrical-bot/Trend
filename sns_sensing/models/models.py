@@ -174,3 +174,20 @@ class CoOccurrence(Base):
     keyword = Column(String, nullable=False)
     co_keyword = Column(String, nullable=False)
     count = Column(Integer, default=1)
+
+class TrendingKeyword(Base):
+    """
+    # trending_keywords 테이블
+    #
+    # 1. 목적:
+    # 1차 필터(정량적 스파이크)를 통과한 후보 키워드들의 생애주기(상태)를 관리합니다.
+    # PENDING(대기중), TREND(트렌드 확정), NOISE(노이즈 판정), EXPIRED(트렌드 소멸)
+    """
+    __tablename__ = "trending_keywords"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    keyword = Column(String, nullable=False, unique=True, index=True)
+    status = Column(String, nullable=False, default="PENDING") # PENDING, TREND, NOISE, EXPIRED
+    reason = Column(String, nullable=True) # GPT가 판정한 이유 등
+    detected_at = Column(DateTime, default=func.now()) # 처음 스파이크로 감지된 시간
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now()) # 상태가 마지막으로 변경된 시간

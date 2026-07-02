@@ -153,7 +153,7 @@ def backfill_keyword(db: Session, target_keyword: str, days_ago: int = 14, max_r
             valid_food_mapping[kw] = canonical_name
         # 타겟 키워드는 강제로 유효 처리
         clean_target = target_keyword.replace(" ", "")
-        valid_food_mapping[clean_target] = clean_target
+        valid_food_mapping[clean_target] = target_keyword
         valid_food_mapping[target_keyword] = target_keyword
 
     # 5. 시계열 통계(KeywordStat) 기록
