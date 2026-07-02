@@ -15,3 +15,5 @@ __pycache__/
 .idea/
 .DS_Store
 scratch/
+lightgbm_test/
+*.db

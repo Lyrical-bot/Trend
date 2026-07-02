@@ -70,25 +70,35 @@ def fetch_youtube_videos(max_results: int = 20) -> list:
     if not youtube:
         return []
         
-    search_query = _get_dynamic_search_query()
-    print(f"[Info] 유튜브 검색 쿼리: '{search_query}' (max_results={max_results})")
-    
-    # 1. 검색 API 호출 (최신순 정렬)
-    try:
-        search_response = youtube.search().list(
-            q=search_query,
-            part='id,snippet',
-            maxResults=max_results,
-            order='date',
-            type='video',
-            videoDuration='short',
-            regionCode='KR'
-        ).execute()
-    except Exception as e:
-        print(f"[Error] 유튜브 API 검색 호출 실패 (Quota 초과 등): {e}")
-        return []
-    
-    return _process_youtube_search_results(search_response)
+    # 검색 결과가 0건일 수 있으므로 최대 5번까지 다른 키워드로 재시도합니다.
+    for attempt in range(5):
+        search_query = _get_dynamic_search_query()
+        print(f"[Info] 유튜브 검색 쿼리 시도 {attempt+1}/5: '{search_query}' (max_results={max_results})")
+        
+        # 1. 검색 API 호출 (최신순 정렬)
+        try:
+            search_response = youtube.search().list(
+                q=search_query,
+                part='id,snippet',
+                maxResults=max_results,
+                order='date',
+                type='video',
+                videoDuration='short',
+                regionCode='KR'
+            ).execute()
+            
+            items = search_response.get('items', [])
+            if items:
+                return _process_youtube_search_results(search_response)
+            else:
+                print(f"[Info] '{search_query}'에 대한 최신 쇼츠 결과가 없습니다. 다른 키워드로 재시도합니다.")
+                
+        except Exception as e:
+            print(f"[Error] 유튜브 API 검색 호출 실패 (Quota 초과 등): {e}")
+            return []
+            
+    print("[Warning] 5번의 시도에도 최신 쇼츠 영상을 찾지 못했습니다.")
+    return []
 
 def _process_youtube_search_results(search_response: dict) -> list:
     """검색 결과 객체(search_response)를 파싱하여 통계와 함께 비디오 리스트를 반환합니다."""
@@ -178,28 +188,36 @@ def fetch_historical_youtube_videos(days_ago: int = 14, max_results_per_day: int
         start_date = (now - timedelta(days=i+1)).strftime('%Y-%m-%dT00:00:00Z')
         end_date = (now - timedelta(days=i)).strftime('%Y-%m-%dT00:00:00Z')
         
-        search_query = _get_dynamic_search_query()
-        
-        try:
-            search_response = youtube.search().list(
-                q=search_query,
-                part='id,snippet',
-                maxResults=max_results_per_day,
-                order='relevance', # 과거 특정 기간이므로 relevance가 더 적합할 수 있음
-                type='video',
-                videoDuration='short',
-                regionCode='KR',
-                publishedAfter=start_date,
-                publishedBefore=end_date
-            ).execute()
+        # 특정 기간 내 결과가 없을 확률이 매우 높으므로 최대 5회 재시도
+        for attempt in range(5):
+            search_query = _get_dynamic_search_query()
             
-            daily_videos = _process_youtube_search_results(search_response)
-            all_videos.extend(daily_videos)
-            
-        except Exception as e:
-            print(f"[Error] {start_date} 구간 소급 수집 실패: {e}")
-            continue
-            
+            try:
+                search_response = youtube.search().list(
+                    q=search_query,
+                    part='id,snippet',
+                    maxResults=max_results_per_day,
+                    order='relevance', # 과거 특정 기간이므로 relevance가 더 적합할 수 있음
+                    type='video',
+                    videoDuration='short',
+                    regionCode='KR',
+                    publishedAfter=start_date,
+                    publishedBefore=end_date
+                ).execute()
+                
+                items = search_response.get('items', [])
+                if items:
+                    daily_videos = _process_youtube_search_results(search_response)
+                    all_videos.extend(daily_videos)
+                    break # 성공했으므로 다음 날짜(i)로 넘어감
+                else:
+                    # 결과 없으면 다른 키워드로 재시도
+                    pass
+                    
+            except Exception as e:
+                print(f"[Error] {start_date} 구간 소급 수집 실패: {e}")
+                break
+                
     print(f"[Info] 소급 수집 완료: 총 {len(all_videos)}개의 과거 영상 확보.")
     return all_videos
 
