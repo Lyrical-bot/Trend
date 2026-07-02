@@ -6,6 +6,12 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
 import os
+from dotenv import load_dotenv
+
+# 최상위 루트의 .env 파일을 로드
+db_dir = os.path.dirname(os.path.abspath(__file__))
+root_dir = os.path.dirname(os.path.dirname(db_dir))
+load_dotenv(dotenv_path=os.path.join(root_dir, ".env"))
 
 # 환경변수에서 DATABASE_URL 로드
 DATABASE_URL = os.getenv("DATABASE_URL")
